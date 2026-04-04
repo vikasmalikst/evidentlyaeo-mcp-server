@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { LRUCache } from 'lru-cache';
 
-import { validateTokenAndIssueShadow, assertScope } from './auth/token-validator';
+import { validateTokenAndIssueShadow, assertScope, McpUserContext } from './auth/token-validator';
 import { rateLimiter } from './middleware/rate-limiter';
 import { logAudit } from './audit/audit-logger';
 import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter';

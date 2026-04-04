@@ -37,22 +37,16 @@ import {
   dashboardKPIsSchema 
 } from './tools/dashboard.tool';
 
-export const requestContext = new AsyncLocalStorage<{ 
-  req: Request, 
-  ctx: any, 
-  dbToken: string 
-}>();
-
 // --------------------------------------------------------------------------------
 // Tool Registration Helper
 // --------------------------------------------------------------------------------
-function registerTools(server: McpServer) {
+function registerTools(server: McpServer, sessionId: string) {
   server.tool(
     'brands.list',
     'Returns all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date.',
     brandsListSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('brands.list', 'read:brands', inputs, executeBrandsList);
+      return await executeToolWithMiddleware('brands.list', 'read:brands', inputs, executeBrandsList, sessionId);
     }
   );
 
@@ -65,7 +59,7 @@ function registerTools(server: McpServer) {
     'Returns high-level analytical KPIs for a brand, including Search Visibility, Share of Voice, Sentiment, Topic Performance, and Competitor Gaps.',
     dashboardKPIsSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('dashboard.kpi_overview', 'read:dashboard', inputs, executeDashboardKPIs);
+      return await executeToolWithMiddleware('dashboard.kpi_overview', 'read:dashboard', inputs, executeDashboardKPIs, sessionId);
     }
   );
 
@@ -74,7 +68,7 @@ function registerTools(server: McpServer) {
     'Returns performance data for top-performing queries, including visibility scores, mentions, and Share of Answer (SOA).',
     queryPerformanceSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('query.performance', 'read:queries', inputs, executeQueryPerformance);
+      return await executeToolWithMiddleware('query.performance', 'read:queries', inputs, executeQueryPerformance, sessionId);
     }
   );
 
@@ -83,7 +77,7 @@ function registerTools(server: McpServer) {
     'Returns high-level performance data aggregated by topic, including visibility and sentiment across query groups.',
     topicsPerformanceSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('topics.performance', 'read:queries', inputs, executeTopicsPerformance);
+      return await executeToolWithMiddleware('topics.performance', 'read:queries', inputs, executeTopicsPerformance, sessionId);
     }
   );
 
@@ -92,7 +86,7 @@ function registerTools(server: McpServer) {
     'Returns source attribution data for a brand, showing which domains are citing it and their overall impact.',
     getSourceAttributionSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('citations.source_attribution', 'read:citations', inputs, executeSourceAttribution);
+      return await executeToolWithMiddleware('citations.source_attribution', 'read:citations', inputs, executeSourceAttribution, sessionId);
     }
   );
 
@@ -101,7 +95,7 @@ function registerTools(server: McpServer) {
     'Returns a list of AI-driven strategy recommendations for a specific brand, including actions, reasons, and impact scores.',
     listRecommendationsSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('recommendations.list', 'read:recommendations', inputs, executeListRecommendations);
+      return await executeToolWithMiddleware('recommendations.list', 'read:recommendations', inputs, executeListRecommendations, sessionId);
     }
   );
 
@@ -110,7 +104,7 @@ function registerTools(server: McpServer) {
     'Returns full technical details for a specific recommendation, including deep explanations and focus sources.',
     getRecommendationDetailSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('recommendations.get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail);
+      return await executeToolWithMiddleware('recommendations.get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail, sessionId);
     }
   );
 
@@ -119,7 +113,7 @@ function registerTools(server: McpServer) {
     'Returns the most recent AEO (Answer Engine Optimization) domain readiness audit results for a specific brand.',
     getDomainAuditSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('domain_readiness.get_audit', 'read:domain', inputs, executeGetDomainAudit);
+      return await executeToolWithMiddleware('domain_readiness.get_audit', 'read:domain', inputs, executeGetDomainAudit, sessionId);
     }
   );
 }
@@ -131,16 +125,17 @@ async function executeToolWithMiddleware(
   toolName: string,
   requiredScope: string,
   inputs: unknown,
-  handler: (inputs: any, ctx: any, dbToken: string) => Promise<any>
+  handler: (inputs: any, ctx: any, dbToken: string) => Promise<any>,
+  sessionId: string
 ) {
   const t0 = Date.now();
-  const store = requestContext.getStore();
+  const session = serverCache.get(sessionId);
   
-  if (!store) {
+  if (!session?.ctx) {
     return errorResponse(new McpSystemError('Missing request context', 'NO_CONTEXT'));
   }
 
-  const { ctx, dbToken } = store;
+  const { ctx, dbToken } = session;
 
   try {
     assertScope(ctx.scopes, requiredScope);
@@ -179,25 +174,40 @@ async function executeToolWithMiddleware(
 // Session Manager
 // --------------------------------------------------------------------------------
 
-const serverCache = new LRUCache<string, { server: McpServer; transport: StreamableHTTPServerTransport }>({
+interface SessionEntry {
+  server: McpServer;
+  transport: StreamableHTTPServerTransport;
+  ctx: any;
+  dbToken: string;
+}
+
+const serverCache = new LRUCache<string, SessionEntry>({
   max: 100,
   ttl: 1000 * 60 * 60,
 });
 
-async function getOrCreateServerForSession(sessionId: string) {
+async function getOrCreateServerForSession(
+  sessionId: string,
+  ctx: any,
+  dbToken: string
+) {
   let session = serverCache.get(sessionId);
   if (!session) {
     const server = new McpServer({ name: 'EvidentlyAEO', version: '1.0.0' });
-    registerTools(server);
     
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => sessionId,
     });
-    
+
+    registerTools(server, sessionId);
     await server.connect(transport);
     
-    session = { server, transport };
+    session = { server, transport, ctx, dbToken };
     serverCache.set(sessionId, session);
+  } else {
+    // Update auth context on every request — token may have been refreshed
+    session.ctx = ctx;
+    session.dbToken = dbToken;
   }
   return session;
 }
@@ -242,13 +252,11 @@ router.post('/', async (req, res) => {
     // 2. Identify or generate session
     const sessionId = (req.headers['mcp-session-id'] as string) || (req.query.sessionId as string) || randomUUID();
     
-    // 3. Get/Init server for this session
-    const { transport } = await getOrCreateServerForSession(sessionId);
+    // 3. Get/Init server for this session (updates ctx/dbToken in cache)
+    const { transport } = await getOrCreateServerForSession(sessionId, ctx, dbToken);
     
-    // 4. Dispatch to transport within its authenticated context
-    await requestContext.run({ req, ctx, dbToken }, async () => {
-      await transport.handleRequest(req, res, req.body);
-    });
+    // 4. Dispatch to transport directly — context is recovered by sessionId in executeToolWithMiddleware
+    await transport.handleRequest(req, res, req.body);
   } catch (err) {
     const status = err instanceof McpUserError ? 401 : 500;
     return res.status(status).json(errorResponse(err));

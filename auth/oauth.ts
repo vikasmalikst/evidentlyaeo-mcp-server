@@ -20,11 +20,51 @@ wellKnownRouter.get('/.well-known/oauth-authorization-server', (req: Request, re
     token_endpoint_auth_methods_supported: ['client_secret_post', 'none'], // Allow PKCE
     code_challenge_methods_supported: ['S256'],
     scopes_supported: ['read:dashboard', 'read:queries', 'read:citations', 'read:recommendations', 'read:domain', 'read:brands'],
+    registration_endpoint: `${config.apiUrl}/oauth/register`,
+  });
+});
+
+/**
+ * GET /.well-known/oauth-protected-resource
+ * RFC 9728 — tells clients where the authorization server lives
+ */
+wellKnownRouter.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
+  res.json({
+    resource: config.apiUrl,
+    authorization_servers: [`${config.apiUrl}/.well-known/oauth-authorization-server`],
+  });
+});
+
+// Also handle the path-suffixed variant Inspector tries first
+wellKnownRouter.get('/.well-known/oauth-protected-resource/mcp', (req: Request, res: Response) => {
+  res.json({
+    resource: `${config.apiUrl}/mcp`,
+    authorization_servers: [`${config.apiUrl}/.well-known/oauth-authorization-server`],
   });
 });
 
 
 export const oauthRouter = Router();
+
+/**
+ * POST /oauth/register
+ * RFC 7591 Dynamic Client Registration
+ * Inspector requires this to self-register before initiating OAuth flow
+ */
+oauthRouter.post('/register', (req: Request, res: Response) => {
+  const { client_name, redirect_uris } = req.body;
+
+  // Return a static client_id — we don't persist clients,
+  // Inspector just needs a valid response to proceed
+  res.status(201).json({
+    client_id: 'mcp-inspector-client',
+    client_name: client_name || 'MCP Inspector',
+    redirect_uris: redirect_uris || [],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+  });
+});
 
 /**
  * POST /token

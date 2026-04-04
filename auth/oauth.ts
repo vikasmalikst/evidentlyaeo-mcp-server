@@ -31,7 +31,7 @@ wellKnownRouter.get('/.well-known/oauth-authorization-server', (req: Request, re
 wellKnownRouter.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
   res.json({
     resource: 'http://localhost:4001',
-    authorization_servers: ['http://localhost:4001/.well-known/oauth-authorization-server'],
+    authorization_servers: ['http://localhost:4001'],
   });
 });
 
@@ -39,7 +39,7 @@ wellKnownRouter.get('/.well-known/oauth-protected-resource', (req: Request, res:
 wellKnownRouter.get('/.well-known/oauth-protected-resource/mcp', (req: Request, res: Response) => {
   res.json({
     resource: 'http://localhost:4001/mcp',
-    authorization_servers: ['http://localhost:4001/.well-known/oauth-authorization-server'],
+    authorization_servers: ['http://localhost:4001'],
   });
 });
 

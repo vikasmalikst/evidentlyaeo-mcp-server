@@ -1,8 +1,15 @@
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { config } from '../../config/environment';
 import { verifyToken } from '../../utils/jwt';
 import { authService } from '../../services/auth/auth.service';
+import logger from '../../utils/logger';
+
+// ─── Environment-Aware Discovery Base URL ──────────────────────────────────────
+const BASE_URL = config.nodeEnv === 'development'
+  ? 'http://localhost:4001'
+  : config.apiUrl; // e.g. https://api.evidentlyaeo.com
 
 export const wellKnownRouter = Router();
 
@@ -12,15 +19,31 @@ export const wellKnownRouter = Router();
  */
 wellKnownRouter.get('/.well-known/oauth-authorization-server', (req: Request, res: Response) => {
   res.json({
-    issuer: 'http://localhost:4001',
+    issuer: BASE_URL,
     authorization_endpoint: `${config.frontendUrl}/mcp/consent`, // Offloaded to frontend
-    token_endpoint: 'http://localhost:4001/oauth/token',
+    token_endpoint: `${BASE_URL}/oauth/token`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['client_secret_post', 'none'], // Allow PKCE
     code_challenge_methods_supported: ['S256'],
     scopes_supported: ['read:dashboard', 'read:queries', 'read:citations', 'read:recommendations', 'read:domain', 'read:brands'],
-    registration_endpoint: 'http://localhost:4001/oauth/register',
+    registration_endpoint: `${BASE_URL}/oauth/register`,
+  });
+});
+
+/**
+ * GET /.well-known/openid-configuration
+ * RFC 8414 — Compatibility shim for OIDC-aware discovery clients
+ */
+wellKnownRouter.get('/.well-known/openid-configuration', (req: Request, res: Response) => {
+  res.json({
+    issuer: BASE_URL,
+    authorization_endpoint: `${config.frontendUrl}/mcp/consent`,
+    token_endpoint: `${BASE_URL}/oauth/token`,
+    registration_endpoint: `${BASE_URL}/oauth/register`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],
   });
 });
 
@@ -30,16 +53,16 @@ wellKnownRouter.get('/.well-known/oauth-authorization-server', (req: Request, re
  */
 wellKnownRouter.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
   res.json({
-    resource: 'http://localhost:4001',
-    authorization_servers: ['http://localhost:4001'],
+    resource: BASE_URL,
+    authorization_servers: [BASE_URL],
   });
 });
 
 // Also handle the path-suffixed variant Inspector tries first
 wellKnownRouter.get('/.well-known/oauth-protected-resource/mcp', (req: Request, res: Response) => {
   res.json({
-    resource: 'http://localhost:4001/mcp',
-    authorization_servers: ['http://localhost:4001'],
+    resource: `${BASE_URL}/mcp`,
+    authorization_servers: [BASE_URL],
   });
 });
 
@@ -54,11 +77,10 @@ export const oauthRouter = Router();
 oauthRouter.post('/register', (req: Request, res: Response) => {
   const { client_name, redirect_uris } = req.body;
 
-  // Return a static client_id — we don't persist clients,
-  // Inspector just needs a valid response to proceed
+  // Return a unique client_id per registration
   res.status(201).json({
-    client_id: 'mcp-inspector-client',
-    client_name: client_name || 'MCP Inspector',
+    client_id: randomUUID(),
+    client_name: client_name || 'MCP Client',
     redirect_uris: redirect_uris || [],
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
@@ -105,7 +127,7 @@ oauthRouter.post('/token', async (req: Request, res: Response): Promise<void> =>
         return;
       }
 
-      console.log('[OAuth Debug] user (from getUserProfile):', JSON.stringify(user, null, 2));
+      logger.debug('[OAuth] Token minted', { userId: user.id });
 
       // Mint the MCP Access Token
       const mcpAccessToken = jwt.sign(

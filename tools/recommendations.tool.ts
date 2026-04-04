@@ -47,7 +47,12 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
 
   if (startDate) query = query.gte('created_at', startDate);
   if (endDate) query = query.lte('created_at', endDate);
-  if (priority && priority !== 'all') query = query.eq('priority', priority);
+  
+  if (priority && priority !== 'all') {
+    // DB uses Title Case ('High', 'Medium', 'Low')
+    const mappedPriority = priority.charAt(0).toUpperCase() + priority.slice(1);
+    query = query.eq('priority', mappedPriority);
+  }
 
   const { data, error } = await query;
 

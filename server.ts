@@ -12,6 +12,30 @@ import { logAudit } from './audit/audit-logger';
 import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter';
 
 import { executeBrandsList, brandsListSchema } from './tools/brands.tool';
+import { 
+  executeListRecommendations, 
+  listRecommendationsSchema, 
+  executeGetRecommendationDetail, 
+  getRecommendationDetailSchema 
+} from './tools/recommendations.tool';
+import { 
+  executeGetDomainAudit, 
+  getDomainAuditSchema 
+} from './tools/domain-readiness.tool';
+import { 
+  executeSourceAttribution, 
+  getSourceAttributionSchema 
+} from './tools/citations.tool';
+import { 
+  executeQueryPerformance,
+  queryPerformanceSchema,
+  executeTopicsPerformance, 
+  topicsPerformanceSchema 
+} from './tools/queries.tool';
+import { 
+  executeDashboardKPIs, 
+  dashboardKPIsSchema 
+} from './tools/dashboard.tool';
 
 export const requestContext = new AsyncLocalStorage<{ 
   req: Request, 
@@ -32,68 +56,70 @@ function registerTools(server: McpServer) {
     }
   );
 
-  // --- Phase 2 Tool Stubs ---
+  // --------------------------------------------------------------------------------
+  // Production Tool Suite
+  // --------------------------------------------------------------------------------
 
   server.tool(
     'dashboard.kpi_overview',
-    'Returns high-level KPIs for a specific brand.',
-    { brandId: z.string().uuid() as any },
+    'Returns high-level analytical KPIs for a brand, including Search Visibility, Share of Voice, Sentiment, Topic Performance, and Competitor Gaps.',
+    dashboardKPIsSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('dashboard.kpi_overview', 'read:dashboard', inputs, async () => ({ status: 'stub' }));
+      return await executeToolWithMiddleware('dashboard.kpi_overview', 'read:dashboard', inputs, executeDashboardKPIs);
     }
   );
 
   server.tool(
     'query.performance',
-    'Returns performance data for top-performing queries.',
-    {},
+    'Returns performance data for top-performing queries, including visibility scores, mentions, and Share of Answer (SOA).',
+    queryPerformanceSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('query.performance', 'read:queries', inputs, async () => ({ status: 'stub' }));
+      return await executeToolWithMiddleware('query.performance', 'read:queries', inputs, executeQueryPerformance);
     }
   );
 
   server.tool(
     'topics.performance',
-    'Returns performance data for specific topics.',
-    {},
+    'Returns high-level performance data aggregated by topic, including visibility and sentiment across query groups.',
+    topicsPerformanceSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('topics.performance', 'read:queries', inputs, async () => ({ status: 'stub' }));
+      return await executeToolWithMiddleware('topics.performance', 'read:queries', inputs, executeTopicsPerformance);
     }
   );
 
   server.tool(
     'citations.source_attribution',
-    'Returns source attribution data for citations.',
-    {},
+    'Returns source attribution data for a brand, showing which domains are citing it and their overall impact.',
+    getSourceAttributionSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('citations.source_attribution', 'read:citations', inputs, async () => ({ status: 'stub' }));
+      return await executeToolWithMiddleware('citations.source_attribution', 'read:citations', inputs, executeSourceAttribution);
     }
   );
 
   server.tool(
     'recommendations.list',
-    'Returns a list of AI-driven recommendations.',
-    {},
+    'Returns a list of AI-driven strategy recommendations for a specific brand, including actions, reasons, and impact scores.',
+    listRecommendationsSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('recommendations.list', 'read:recommendations', inputs, async () => ({ status: 'stub' }));
+      return await executeToolWithMiddleware('recommendations.list', 'read:recommendations', inputs, executeListRecommendations);
     }
   );
 
   server.tool(
     'recommendations.get_detail',
-    'Returns technical details for a specific recommendation.',
-    {},
+    'Returns full technical details for a specific recommendation, including deep explanations and focus sources.',
+    getRecommendationDetailSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('recommendations.get_detail', 'read:recommendations', inputs, async () => ({ status: 'stub' }));
+      return await executeToolWithMiddleware('recommendations.get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail);
     }
   );
 
   server.tool(
     'domain_readiness.get_audit',
-    'Returns a domain audit for AEO readiness.',
-    {},
+    'Returns the most recent AEO (Answer Engine Optimization) domain readiness audit results for a specific brand.',
+    getDomainAuditSchema.shape,
     async (inputs) => {
-      return await executeToolWithMiddleware('domain_readiness.get_audit', 'read:domain', inputs, async () => ({ status: 'stub' }));
+      return await executeToolWithMiddleware('domain_readiness.get_audit', 'read:domain', inputs, executeGetDomainAudit);
     }
   );
 }

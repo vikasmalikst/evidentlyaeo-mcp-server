@@ -12,15 +12,15 @@ export const wellKnownRouter = Router();
  */
 wellKnownRouter.get('/.well-known/oauth-authorization-server', (req: Request, res: Response) => {
   res.json({
-    issuer: config.apiUrl,
+    issuer: 'http://localhost:4001',
     authorization_endpoint: `${config.frontendUrl}/mcp/consent`, // Offloaded to frontend
-    token_endpoint: `${config.apiUrl}/oauth/token`,
+    token_endpoint: 'http://localhost:4001/oauth/token',
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['client_secret_post', 'none'], // Allow PKCE
     code_challenge_methods_supported: ['S256'],
     scopes_supported: ['read:dashboard', 'read:queries', 'read:citations', 'read:recommendations', 'read:domain', 'read:brands'],
-    registration_endpoint: `${config.apiUrl}/oauth/register`,
+    registration_endpoint: 'http://localhost:4001/oauth/register',
   });
 });
 
@@ -30,16 +30,16 @@ wellKnownRouter.get('/.well-known/oauth-authorization-server', (req: Request, re
  */
 wellKnownRouter.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
   res.json({
-    resource: config.apiUrl,
-    authorization_servers: [`${config.apiUrl}/.well-known/oauth-authorization-server`],
+    resource: 'http://localhost:4001',
+    authorization_servers: ['http://localhost:4001/.well-known/oauth-authorization-server'],
   });
 });
 
 // Also handle the path-suffixed variant Inspector tries first
 wellKnownRouter.get('/.well-known/oauth-protected-resource/mcp', (req: Request, res: Response) => {
   res.json({
-    resource: `${config.apiUrl}/mcp`,
-    authorization_servers: [`${config.apiUrl}/.well-known/oauth-authorization-server`],
+    resource: 'http://localhost:4001/mcp',
+    authorization_servers: ['http://localhost:4001/.well-known/oauth-authorization-server'],
   });
 });
 

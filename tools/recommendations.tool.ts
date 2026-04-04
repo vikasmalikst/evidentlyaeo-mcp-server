@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../../config/environment';
-import { supabaseClient } from '../../config/database';
+import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpUserError, McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, paginationSchema } from './schemas';
 
@@ -28,6 +28,8 @@ export const getRecommendationDetailSchema = z.object({
  */
 export async function executeListRecommendations(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, limit = 20, offset = 0, priority } = inputs;
+
+  await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   // Initialize user-scoped Supabase client with the shadow dbToken
   const userClient = createClient(config.supabase.url, config.supabase.anonKey, {

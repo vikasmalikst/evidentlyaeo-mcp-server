@@ -33,6 +33,9 @@ function summarizeInputs(inputs: Record<string, unknown>): Record<string, unknow
   if (inputs.brandId && typeof inputs.brandId === 'string') {
     summary.brandIdPrefix = inputs.brandId.substring(0, 8) + '...';
   }
+  if (inputs.recommendationId && typeof inputs.recommendationId === 'string') {
+    summary.recommendationIdPrefix = inputs.recommendationId.substring(0, 8) + '...';
+  }
   if (inputs.startDate) summary.hasStartDate = true;
   if (inputs.endDate) summary.hasEndDate = true;
   if (inputs.topic) summary.hasTopic = true;

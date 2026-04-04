@@ -49,9 +49,16 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
   if (endDate) query = query.lte('created_at', endDate);
   
   if (priority && priority !== 'all') {
-    // DB uses Title Case ('High', 'Medium', 'Low')
-    const mappedPriority = priority.charAt(0).toUpperCase() + priority.slice(1);
-    query = query.eq('priority', mappedPriority);
+    // Map lowercase enum inputs to Title Case values used in the DB
+    const PRIORITY_MAP: Record<string, string> = {
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low'
+    };
+    const mappedPriority = PRIORITY_MAP[priority];
+    if (mappedPriority) {
+      query = query.eq('priority', mappedPriority);
+    }
   }
 
   const { data, error } = await query;

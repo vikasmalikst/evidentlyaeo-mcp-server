@@ -12,6 +12,10 @@ const buckets = new Map<string, Bucket>();
 /**
  * Implements an in-process continuous refill token bucket rate limiter.
  * Throws McpUserError if rate limit is exceeded.
+ * 
+ * NOTE: This is in-process only. For multi-instance deployments (horizontal scaling, PM2 cluster, 
+ * or container replicas), this bucket is not shared. Consider replacing with a Redis-backed 
+ * sliding window limiter (e.g. ioredis) for production scale.
  */
 export async function rateLimiter(customerId: string): Promise<void> {
   const now = Date.now();

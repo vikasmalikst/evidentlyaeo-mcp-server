@@ -1,9 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { Router, Request } from 'express';
+import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { AsyncLocalStorage } from 'async_hooks';
 import { LRUCache } from 'lru-cache';
 
 import { validateTokenAndIssueShadow, assertScope } from './auth/token-validator';
@@ -125,7 +123,7 @@ async function executeToolWithMiddleware(
   toolName: string,
   requiredScope: string,
   inputs: unknown,
-  handler: (inputs: any, ctx: any, dbToken: string) => Promise<any>,
+  handler: (inputs: unknown, ctx: McpUserContext, dbToken: string) => Promise<unknown>,
   sessionId: string
 ) {
   const t0 = Date.now();
@@ -177,7 +175,7 @@ async function executeToolWithMiddleware(
 interface SessionEntry {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
-  ctx: any;
+  ctx: McpUserContext;
   dbToken: string;
 }
 
@@ -188,7 +186,7 @@ const serverCache = new LRUCache<string, SessionEntry>({
 
 async function getOrCreateServerForSession(
   sessionId: string,
-  ctx: any,
+  ctx: McpUserContext,
   dbToken: string
 ) {
   let session = serverCache.get(sessionId);
@@ -241,10 +239,16 @@ router.options('/', (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    // 1. Authenticate FIRST - this ensures Test 2 returns UNAUTHORIZED correctly
-    const rawToken = req.headers.authorization?.split(' ')[1] || '';
+    // 1. Authenticate - Support both Authorization header and query param (Inspector URL mode)
+    const rawToken = 
+      req.headers.authorization?.split(' ')[1] || 
+      (req.query.token as string)?.replace(/^Bearer\s+/i, '') || 
+      '';
+
     if (!rawToken) {
-      return res.status(401).json(errorResponse(new McpUserError('Missing Authorization header', 'UNAUTHORIZED')));
+      return res.status(401).json(
+        errorResponse(new McpUserError('Missing Authorization header', 'UNAUTHORIZED'))
+      );
     }
 
     const { ctx, dbToken } = await validateTokenAndIssueShadow(rawToken);

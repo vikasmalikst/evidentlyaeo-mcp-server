@@ -207,6 +207,28 @@ async function getOrCreateServerForSession(sessionId: string) {
 // --------------------------------------------------------------------------------
 const router = Router();
 
+// Required: Inspector and clients probe the endpoint with GET first
+router.get('/', (req, res) => {
+  res.status(200).json({
+    name: 'EvidentlyAEO MCP Server',
+    version: '1.0.0',
+    transport: 'streamable-http',
+    protocolVersion: '2024-11-05',
+  });
+});
+
+// Required: Handle CORS preflights for MCP Inspector
+router.options('/', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin':      req.headers.origin || '*',
+    'Access-Control-Allow-Methods':     'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers':     'Content-Type, Authorization, Mcp-Session-Id',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Max-Age':           '86400', // Cache preflight for 24h
+  });
+  res.status(204).send();
+});
+
 router.post('/', async (req, res) => {
   try {
     // 1. Authenticate FIRST - this ensures Test 2 returns UNAUTHORIZED correctly

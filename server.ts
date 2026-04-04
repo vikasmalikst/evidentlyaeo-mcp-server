@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { LRUCache } from 'lru-cache';
@@ -210,7 +211,7 @@ router.options('/', (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    // 1. Authenticate - Support both Authorization header and query param (Inspector URL mode)
+    // 1. Authenticate
     const rawToken =
       req.headers.authorization?.split(' ')[1] ||
       (req.query.token as string)?.replace(/^Bearer\s+/i, '') ||
@@ -224,40 +225,51 @@ router.post('/', async (req, res) => {
 
     const { ctx, dbToken } = await validateTokenAndIssueShadow(rawToken);
 
-    // 2. Identify or generate session
-    // CRITICAL: We only lookup by header/query. Fallback to randomUUID() occurs ONLY in the new session branch.
-    const incomingSessionId = (req.headers['mcp-session-id'] as string) || (req.query.sessionId as string);
+    // 2. Route by session state
+    const incomingSessionId = req.headers['mcp-session-id'] as string | undefined;
 
     if (incomingSessionId && serverCache.has(incomingSessionId)) {
-      // Existing session — update auth context and dispatch
+      // --- Existing session: refresh auth context and dispatch ---
       const session = serverCache.get(incomingSessionId)!;
       session.ctx = ctx;
       session.dbToken = dbToken;
       await session.transport.handleRequest(req, res, req.body);
-    } else {
-      // New session — let the transport generate its own ID
+
+    } else if (!incomingSessionId && isInitializeRequest(req.body)) {
+      // --- New session: only accept initialize requests ---
       const newSessionId = randomUUID();
       const server = new McpServer({ name: 'EvidentlyAEO', version: '1.0.0' });
       const transport = new StreamableHTTPServerTransport({
+        // sessionIdGenerator tells the transport what ID to use and to operate in stateful mode
         sessionIdGenerator: () => newSessionId,
+        // onsessioninitialized fires after the transport assigns its ID — use this to cache
+        // under the exact ID the transport will send to the client in the response header
+        onsessioninitialized: (sid) => {
+          serverCache.set(sid, { server, transport, ctx, dbToken });
+        },
       });
 
-      // 1. Register tools FIRST
+      // Register tools FIRST, connect SECOND (wires tools into transport)
       registerTools(server, newSessionId);
-
-      // 2. Connect SECOND (wires tools into transport)
       await server.connect(transport);
 
-      // 3. Cache THIRD
-      serverCache.set(newSessionId, { server, transport, ctx, dbToken });
-
-      // 4. Dispatch FOURTH - handleRequest sends the Mcp-Session-Id response header automatically
+      // Dispatch — transport calls sessionIdGenerator(), sets _initialized, fires onsessioninitialized,
+      // and sends the Mcp-Session-Id response header automatically
       await transport.handleRequest(req, res, req.body);
+
+    } else {
+      // Non-initialize POST with no valid session — reject cleanly
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Bad Request: No valid session. Send initialize first.' },
+        id: null,
+      });
     }
   } catch (err) {
     const status = err instanceof McpUserError ? 401 : 500;
     return res.status(status).json(errorResponse(err));
   }
 });
+
 
 export default router;

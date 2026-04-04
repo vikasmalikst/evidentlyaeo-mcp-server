@@ -169,7 +169,7 @@ async function executeToolWithMiddleware(
 }
 
 // --------------------------------------------------------------------------------
-// Session Manager
+// Session Management & Router
 // --------------------------------------------------------------------------------
 
 interface SessionEntry {
@@ -184,35 +184,6 @@ const serverCache = new LRUCache<string, SessionEntry>({
   ttl: 1000 * 60 * 60,
 });
 
-async function getOrCreateServerForSession(
-  sessionId: string,
-  ctx: McpUserContext,
-  dbToken: string
-) {
-  let session = serverCache.get(sessionId);
-  if (!session) {
-    const server = new McpServer({ name: 'EvidentlyAEO', version: '1.0.0' });
-    
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => sessionId,
-    });
-
-    registerTools(server, sessionId);
-    await server.connect(transport);
-    
-    session = { server, transport, ctx, dbToken };
-    serverCache.set(sessionId, session);
-  } else {
-    // Update auth context on every request — token may have been refreshed
-    session.ctx = ctx;
-    session.dbToken = dbToken;
-  }
-  return session;
-}
-
-// --------------------------------------------------------------------------------
-// Express Router
-// --------------------------------------------------------------------------------
 const router = Router();
 
 // Required: Inspector and clients probe the endpoint with GET first
@@ -240,9 +211,9 @@ router.options('/', (req, res) => {
 router.post('/', async (req, res) => {
   try {
     // 1. Authenticate - Support both Authorization header and query param (Inspector URL mode)
-    const rawToken = 
-      req.headers.authorization?.split(' ')[1] || 
-      (req.query.token as string)?.replace(/^Bearer\s+/i, '') || 
+    const rawToken =
+      req.headers.authorization?.split(' ')[1] ||
+      (req.query.token as string)?.replace(/^Bearer\s+/i, '') ||
       '';
 
     if (!rawToken) {
@@ -254,13 +225,35 @@ router.post('/', async (req, res) => {
     const { ctx, dbToken } = await validateTokenAndIssueShadow(rawToken);
 
     // 2. Identify or generate session
-    const sessionId = (req.headers['mcp-session-id'] as string) || (req.query.sessionId as string) || randomUUID();
-    
-    // 3. Get/Init server for this session (updates ctx/dbToken in cache)
-    const { transport } = await getOrCreateServerForSession(sessionId, ctx, dbToken);
-    
-    // 4. Dispatch to transport directly — context is recovered by sessionId in executeToolWithMiddleware
-    await transport.handleRequest(req, res, req.body);
+    // CRITICAL: We only lookup by header/query. Fallback to randomUUID() occurs ONLY in the new session branch.
+    const incomingSessionId = (req.headers['mcp-session-id'] as string) || (req.query.sessionId as string);
+
+    if (incomingSessionId && serverCache.has(incomingSessionId)) {
+      // Existing session — update auth context and dispatch
+      const session = serverCache.get(incomingSessionId)!;
+      session.ctx = ctx;
+      session.dbToken = dbToken;
+      await session.transport.handleRequest(req, res, req.body);
+    } else {
+      // New session — let the transport generate its own ID
+      const newSessionId = randomUUID();
+      const server = new McpServer({ name: 'EvidentlyAEO', version: '1.0.0' });
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => newSessionId,
+      });
+
+      // 1. Register tools FIRST
+      registerTools(server, newSessionId);
+
+      // 2. Connect SECOND (wires tools into transport)
+      await server.connect(transport);
+
+      // 3. Cache THIRD
+      serverCache.set(newSessionId, { server, transport, ctx, dbToken });
+
+      // 4. Dispatch FOURTH - handleRequest sends the Mcp-Session-Id response header automatically
+      await transport.handleRequest(req, res, req.body);
+    }
   } catch (err) {
     const status = err instanceof McpUserError ? 401 : 500;
     return res.status(status).json(errorResponse(err));

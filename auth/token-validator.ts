@@ -35,7 +35,8 @@ export async function validateTokenAndIssueShadow(rawMcpToken: string): Promise<
   }
 
   // 2. Extract validated claims
-  const { sub: userId, customer_id: customerId, scopes } = mcpPayload;
+  const { sub: userId, customer_id: customerId, scopes: rawScopes } = mcpPayload;
+  const scopes = Array.isArray(rawScopes) ? rawScopes : [];
 
   if (!userId || !customerId) {
     throw new McpUserError('MCP token is missing required user or customer claims.', 'UNAUTHORIZED');
@@ -46,6 +47,7 @@ export async function validateTokenAndIssueShadow(rawMcpToken: string): Promise<
   const dbToken = jwt.sign(
     {
       sub: userId,              // Crucial: auth.uid() relies on this
+      customer_id: customerId,  // Crucial: RLS tenant filtering relies on this
       aud: 'authenticated',     // Crucial: PostgREST audience check relies on this
       role: 'authenticated',    // Standard Postgres role
       iss: 'supabase',
@@ -59,7 +61,7 @@ export async function validateTokenAndIssueShadow(rawMcpToken: string): Promise<
     ctx: {
       userId,
       customerId,
-      scopes: scopes || [],
+      scopes,
     },
     dbToken,
   };

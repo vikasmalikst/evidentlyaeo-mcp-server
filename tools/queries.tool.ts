@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { promptsAnalyticsService } from '../../services/prompts-analytics.service';
+import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpUserError, McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, collectorsSchema } from './schemas';
 import { getCached, setCached, buildCacheKey } from '../cache/tool-cache';
@@ -57,7 +58,10 @@ async function fetchPromptAnalytics(inputs: any, customerId: string) {
  * Get performance data for top-performing queries (Execute Query Performance)
  */
 export async function executeQueryPerformance(inputs: any, ctx: any, dbToken: string) {
-  const { limit = 20 } = inputs;
+  const { brandId, limit = 20 } = inputs;
+  
+  await validateBrandOwnership(brandId, ctx.customerId, dbToken);
+  
   const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
 
   // Extract prompts across all topics
@@ -76,6 +80,8 @@ export async function executeQueryPerformance(inputs: any, ctx: any, dbToken: st
  * Get performance data aggregated by topics (Execute Topics Performance)
  */
 export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: string) {
+  await validateBrandOwnership(inputs.brandId, ctx.customerId, dbToken);
+  
   const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
 
   // Extract topic-level summaries

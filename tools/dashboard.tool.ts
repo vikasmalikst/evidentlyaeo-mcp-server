@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { dashboardService } from '../../services/brand-dashboard/dashboard.service';
+import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpUserError, McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, collectorsSchema } from './schemas';
 
@@ -22,6 +23,8 @@ export const dashboardKPIsSchema = z.object({
  */
 export async function executeDashboardKPIs(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, collectors, queryTags } = inputs;
+
+  await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   try {
     const end = endDate ? new Date(endDate) : new Date();

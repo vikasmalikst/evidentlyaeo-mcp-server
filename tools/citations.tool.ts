@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { sourceAttributionService } from '../../services/source-attribution.service';
+import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpUserError, McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, collectorsSchema } from './schemas';
 
@@ -19,6 +20,8 @@ export const getSourceAttributionSchema = z.object({
  */
 export async function executeSourceAttribution(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, collectors, queryTags } = inputs;
+
+  await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   try {
     const end = endDate ? new Date(endDate) : new Date();

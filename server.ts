@@ -263,6 +263,9 @@ router.post('/', async (req, res) => {
       registerTools(server, newSessionId);
       await server.connect(transport);
 
+      // Ensure the session ID is sent to the client in the response header
+      res.setHeader('Mcp-Session-Id', newSessionId);
+
       // Dispatch — transport calls sessionIdGenerator(), sets _initialized, fires onsessioninitialized,
       // and sends the Mcp-Session-Id response header automatically
       await transport.handleRequest(req, res, req.body);

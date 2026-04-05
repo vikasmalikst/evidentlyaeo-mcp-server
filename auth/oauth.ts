@@ -96,7 +96,7 @@ oauthRouter.post('/register', (req: Request, res: Response) => {
  */
 oauthRouter.post('/token', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { grant_type, refresh_token, scopes } = req.body;
+    const { grant_type, refresh_token } = req.body;
     let { code, supabase_token } = req.body;
     const secret = process.env.SUPABASE_JWT_SECRET || config.jwt.secret;
 
@@ -142,7 +142,7 @@ oauthRouter.post('/token', async (req: Request, res: Response): Promise<void> =>
           sub: user.id,
           customer_id: user.customer_id,
           aud: 'evidentlyaeo-mcp', // Strict custom audience
-          scopes: Array.isArray(scopes) ? scopes : ALL_SCOPES,
+          scopes: ALL_SCOPES,
         },
         secret,
         { expiresIn: '8h' }

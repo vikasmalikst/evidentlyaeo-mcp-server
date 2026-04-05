@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { LRUCache } from 'lru-cache';
 
 import { validateTokenAndIssueShadow, assertScope, McpUserContext } from './auth/token-validator';
+import { config } from '../config/environment';
 import { rateLimiter } from './middleware/rate-limiter';
 import { logAudit } from './audit/audit-logger';
 import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter';

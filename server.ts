@@ -227,6 +227,10 @@ router.post('/', async (req, res) => {
 
     // 2. Route by session state
     const incomingSessionId = req.headers['mcp-session-id'] as string | undefined;
+    const body = req.body as Record<string, unknown>;
+    const bodyMethod = body?.method as string | undefined;
+
+    console.log(`[MCP POST] method=${bodyMethod ?? 'unknown'} sessionId=${incomingSessionId ?? 'none'} cacheHas=${incomingSessionId ? serverCache.has(incomingSessionId) : 'n/a'} cacheKeys=${JSON.stringify([...serverCache.keys()])}`);
 
     if (incomingSessionId && serverCache.has(incomingSessionId)) {
       // --- Existing session: refresh auth context and dispatch ---

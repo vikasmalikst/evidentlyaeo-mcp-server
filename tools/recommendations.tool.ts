@@ -7,8 +7,8 @@ import { brandIdSchema, dateRangeSchema, paginationSchema } from './schemas';
 /**
  * Recommendations Tool Schema & Handler
  * 
- * [!CAUTION] This tool performs direct DB queries on the recommendations table.
- * It MUST use the user-scoped client (supabaseClient with dbToken) to ensure RLS compliance.
+ * Uses supabaseAdmin with explicit customer_id filtering for all queries.
+ * RLS shadow token approach was removed — ownership is enforced via .eq('customer_id', ctx.customerId).
  */
 
 export const listRecommendationsSchema = z.object({

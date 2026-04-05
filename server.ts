@@ -218,9 +218,14 @@ router.post('/', async (req, res) => {
       '';
 
     if (!rawToken) {
-      return res.status(401).json(
-        errorResponse(new McpUserError('Missing Authorization header', 'UNAUTHORIZED'))
-      );
+      return res.status(401)
+        .set('WWW-Authenticate', 
+          `Bearer realm="EvidentlyAEO MCP", ` +
+          `authorization_uri="${config.frontendUrl}/auth", ` +
+          `token_uri="${config.apiUrl}/oauth/token"`)
+        .json(
+          errorResponse(new McpUserError('Authentication required. Please log in at /auth.', 'UNAUTHORIZED'))
+        );
     }
 
     const { ctx, dbToken } = await validateTokenAndIssueShadow(rawToken);

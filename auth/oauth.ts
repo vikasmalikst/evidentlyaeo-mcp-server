@@ -21,13 +21,19 @@ export const wellKnownRouter = Router();
 /**
  * GET /.well-known/oauth-authorization-server
  * RFC 8414 OAuth 2.0 Authorization Server Metadata
+ * NOTE: response_types_supported and code_challenge_methods_supported are
+ * required by the MCP TypeScript SDK's OAuthMetadataSchema Zod validation.
+ * Without them, discoverAuthorizationServerMetadata() throws a ZodError and
+ * the Inspector/client cannot complete the OAuth flow.
  */
 wellKnownRouter.get('/.well-known/oauth-authorization-server', (req: Request, res: Response) => {
   res.json({
     issuer: BASE_URL,
-    authorization_endpoint: `${config.frontendUrl}/auth`, // Point directly to login page
+    authorization_endpoint: `${config.frontendUrl}/auth`,
     token_endpoint: `${BASE_URL}/oauth/token`,
-    grant_types_supported: ['supabase_exchange', 'refresh_token', 'authorization_code'],
+    response_types_supported: ['code'],                    // Required by MCP SDK OAuthMetadataSchema
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],            // Required: SDK checks for PKCE S256 support
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: ALL_SCOPES,
     registration_endpoint: `${BASE_URL}/oauth/register`,
@@ -44,7 +50,9 @@ wellKnownRouter.get('/.well-known/openid-configuration', (req: Request, res: Res
     authorization_endpoint: `${config.frontendUrl}/auth`,
     token_endpoint: `${BASE_URL}/oauth/token`,
     registration_endpoint: `${BASE_URL}/oauth/register`,
-    grant_types_supported: ['supabase_exchange', 'refresh_token', 'authorization_code'],
+    response_types_supported: ['code'],                    // Required by MCP SDK OAuthMetadataSchema
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],            // Required: SDK checks for PKCE S256 support
   });
 });
 
@@ -83,7 +91,7 @@ oauthRouter.post('/register', (req: Request, res: Response) => {
     client_id: randomUUID(),
     client_name: client_name || 'MCP Client',
     redirect_uris: redirect_uris || [],
-    grant_types: ['supabase_exchange', 'refresh_token', 'authorization_code'],
+    grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     token_endpoint_auth_method: 'none',
   });
@@ -219,4 +227,3 @@ oauthRouter.post('/token', async (req: Request, res: Response): Promise<void> =>
     res.status(500).json({ error: 'server_error' });
   }
 });
-

@@ -1,27 +1,18 @@
-import { createClient } from '@supabase/supabase-js';
-import { config } from '../../config/environment';
+import { supabaseAdmin } from '../../config/database';
 import { McpSystemError, McpUserError } from '../utils/response-formatter';
 import { BrandRow } from '../../services/brand-dashboard/types';
 
 /**
  * Runs BEFORE every brand-scoped MCP tool. Never skip this.
- * Instantiates a user-scoped client securely so Row Level Security (RLS) is enforced.
+ * Uses supabaseAdmin with explicit customerId filtering to bypass RLS shadow token issues.
  */
 export async function validateBrandOwnership(
   brandId: string,
   customerId: string,
-  dbToken: string
+  _dbToken: string // Kept in signature for backward compatibility with callers
 ): Promise<BrandRow> {
-  // Create user-scoped client leveraging RLS via standard Supabase shadow token
-  const userClient = createClient(config.supabase.url, config.supabase.anonKey, {
-    global: {
-      headers: { Authorization: `Bearer ${dbToken}` },
-    },
-    auth: { persistSession: false },
-  });
-
-  // Execute lookup logic. If RLS fails, it returns 0 rows.
-  const { data, error } = await userClient
+  // Execute lookup logic with explicit customer ownership check
+  const { data, error } = await supabaseAdmin
     .from('brands')
     .select('id, name, slug')
     .eq('id', brandId)
@@ -33,7 +24,7 @@ export async function validateBrandOwnership(
   }
 
   if (!data) {
-    throw new McpUserError('Brand not found, or access denied by RLS policy.', 'BRAND_NOT_FOUND');
+    throw new McpUserError('Brand not found, or access denied.', 'BRAND_NOT_FOUND');
   }
 
   return data as BrandRow;

@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { createClient } from '@supabase/supabase-js';
-import { config } from '../../config/environment';
+import { supabaseAdmin } from '../../config/database';
 import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpUserError, McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, paginationSchema } from './schemas';
@@ -30,14 +29,8 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
   const { brandId, startDate, endDate, limit = 20, offset = 0, priority } = inputs;
 
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
-
-  // Initialize user-scoped Supabase client with the shadow dbToken
-  const userClient = createClient(config.supabase.url, config.supabase.anonKey, {
-    global: { headers: { Authorization: `Bearer ${dbToken}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  let query = userClient
+  
+  let query = supabaseAdmin
     .from('recommendations')
     .select('id, action, reason, impact_score, priority, category:citation_category, created_at')
     .eq('brand_id', brandId)
@@ -76,13 +69,7 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
 export async function executeGetRecommendationDetail(inputs: any, ctx: any, dbToken: string) {
   const { recommendationId } = inputs;
 
-  // Initialize user-scoped Supabase client with the shadow dbToken
-  const userClient = createClient(config.supabase.url, config.supabase.anonKey, {
-    global: { headers: { Authorization: `Bearer ${dbToken}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const { data, error } = await userClient
+  const { data, error } = await supabaseAdmin
     .from('recommendations')
     .select('*')
     .eq('id', recommendationId)

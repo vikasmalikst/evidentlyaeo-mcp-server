@@ -117,7 +117,28 @@ oauthRouter.post('/token', async (req: Request, res: Response): Promise<void> =>
     // TODO: remove after MCP Inspector migration confirmed
     if (grant_type === 'authorization_code' && code && !supabase_token) {
       logger.info('[OAuth] Using authorization_code shim');
-      supabase_token = code;
+      
+      // Check if it's already an MCP token (frontend already did the exchange)
+      try {
+        const decoded = jwt.verify(code, secret, { audience: 'evidentlyaeo-mcp' }) as any;
+        logger.info('[OAuth] Shim: Code is already a valid MCP token');
+        
+        // Return a fresh response with the same token but a new refresh token
+        res.json({
+          access_token: code,
+          token_type: 'Bearer',
+          expires_in: 28800,
+          refresh_token: jwt.sign(
+            { sub: decoded.sub, customer_id: decoded.customer_id, type: 'mcp_refresh' },
+            secret,
+            { expiresIn: '7d' }
+          )
+        });
+        return;
+      } catch (err) {
+        // Not an MCP token, fallback to treating code as a Supabase token
+        supabase_token = code;
+      }
     }
 
     if (grant_type === 'supabase_exchange' || (grant_type === 'authorization_code' && supabase_token)) {

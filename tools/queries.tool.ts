@@ -65,7 +65,7 @@ export async function executeQueryPerformance(inputs: any, ctx: any, dbToken: st
   const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
 
   // Extract prompts across all topics
-  const allPrompts = (data.topics || []).flatMap((t: any) => t.prompts || []);
+  const allPrompts = ((data as any).topics || []).flatMap((t: any) => t.prompts || []);
   
   // Sort by visibility or volume (descending)
   const sortedPrompts = allPrompts.sort((a: any, b: any) => (b.visibilityScore || 0) - (a.visibilityScore || 0));
@@ -85,7 +85,7 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
   const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
 
   // Extract topic-level summaries
-  const topics = (data.topics || []).map((t: any) => ({
+  const topics = ((data as any).topics || []).map((t: any) => ({
     name: t.name,
     promptCount: t.promptCount,
     volumeCount: t.volumeCount,

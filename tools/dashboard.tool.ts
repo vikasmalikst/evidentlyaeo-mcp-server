@@ -37,7 +37,6 @@ export async function executeDashboardKPIs(inputs: any, ctx: any, dbToken: strin
       {
         collectors,
         queryTags,
-        includeCompetitors: true,
         skipCache: false
       }
     );

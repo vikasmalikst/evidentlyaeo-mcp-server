@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { McpUserError } from '../utils/response-formatter';
 import { config } from '../../config/environment';
+import { validateApiKey } from '../../services/api-key.service';
 
 export interface McpUserContext {
   userId: string;
@@ -13,28 +14,65 @@ export interface ValidationResult {
   dbToken: string;
 }
 
+function mintShadowToken(userId: string, customerId: string, secret: string): string {
+  return jwt.sign(
+    {
+      sub: userId,
+      customer_id: customerId,
+      aud: 'authenticated',
+      role: 'authenticated',
+      iss: 'supabase',
+      exp: Math.floor(Date.now() / 1000) + 60,
+    },
+    secret,
+    { algorithm: 'HS256' }
+  );
+}
+
 /**
- * Validates the custom MCP token from the AI Client, and if strictly valid,
- * mints a short-lived shadow token securely for passing to Supabase PostgREST.
+ * Validates either:
+ * - an API key (Claude Desktop + local bridges), or
+ * - an MCP JWT token minted through OAuth flow.
+ *
+ * Then returns a strict user context and a 1-minute shadow DB token.
  */
-export async function validateTokenAndIssueShadow(rawMcpToken: string): Promise<ValidationResult> {
+export async function validateTokenAndIssueShadow(rawToken: string): Promise<ValidationResult> {
   const secret = process.env.SUPABASE_JWT_SECRET || config.jwt.secret;
 
   if (!secret) {
     throw new Error('Server misconfiguration: missing JWT secret');
   }
 
-  // 1. Validate the MCP token signature, expiry, and custom audience
+  // Path A: API key support (eaeo_*)
+  if (rawToken.startsWith('eaeo_')) {
+    const keyData = await validateApiKey(rawToken);
+
+    if (!keyData) {
+      throw new McpUserError('Invalid or expired API key.', 'UNAUTHORIZED');
+    }
+
+    const dbToken = mintShadowToken(keyData.userId, keyData.customerId, secret);
+
+    return {
+      ctx: {
+        userId: keyData.userId,
+        customerId: keyData.customerId,
+        scopes: keyData.scopes,
+      },
+      dbToken,
+    };
+  }
+
+  // Path B: Existing MCP OAuth JWT support
   let mcpPayload: any;
   try {
-    mcpPayload = jwt.verify(rawMcpToken, secret, {
-      audience: 'evidentlyaeo-mcp', // Strict evaluation
+    mcpPayload = jwt.verify(rawToken, secret, {
+      audience: 'evidentlyaeo-mcp',
     });
   } catch (error) {
     throw new McpUserError('Invalid, expired, or rejected MCP access token.', 'UNAUTHORIZED');
   }
 
-  // 2. Extract validated claims
   const { sub: userId, customer_id: customerId, scopes: rawScopes } = mcpPayload;
   const scopes = Array.isArray(rawScopes) ? rawScopes : [];
 
@@ -42,20 +80,7 @@ export async function validateTokenAndIssueShadow(rawMcpToken: string): Promise<
     throw new McpUserError('MCP token is missing required user or customer claims.', 'UNAUTHORIZED');
   }
 
-  // 3. ATOMIC ACTION (Post-Validation): Mint the 1-minute Shadow Token
-  // This explicitly mimics a Supabase session for PostgREST RLS
-  const dbToken = jwt.sign(
-    {
-      sub: userId,              // Crucial: auth.uid() relies on this
-      customer_id: customerId,  // Crucial: RLS tenant filtering relies on this
-      aud: 'authenticated',     // Crucial: PostgREST audience check relies on this
-      role: 'authenticated',    // Standard Postgres role
-      iss: 'supabase',
-      exp: Math.floor(Date.now() / 1000) + 60, // Fast 1-min expiry
-    },
-    secret,
-    { algorithm: 'HS256' }
-  );
+  const dbToken = mintShadowToken(userId, customerId, secret);
 
   return {
     ctx: {
@@ -67,9 +92,6 @@ export async function validateTokenAndIssueShadow(rawMcpToken: string): Promise<
   };
 }
 
-/**
- * Ensures the token payload holds the necessary execution scopes prior to operating.
- */
 export function assertScope(grantedScopes: string[], requiredScope: string): void {
   if (!grantedScopes.includes(requiredScope)) {
     throw new McpUserError(`Missing required scope: ${requiredScope}`, 'MISSING_SCOPE');

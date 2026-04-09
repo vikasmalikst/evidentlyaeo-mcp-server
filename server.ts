@@ -45,11 +45,11 @@ function registerTools(server: McpServer, sessionId: string) {
   // type-explosion bug (github.com/modelcontextprotocol/typescript-sdk/issues/985)
   // that causes TypeScript compiler OOM. Remove once SDK ships a fix (tracked in v2).
   server.tool(
-    'brands.list',
+    'brands_list',
     'Returns all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date.',
     brandsListSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('brands.list', 'read:brands', inputs, executeBrandsList, sessionId);
+      return await executeToolWithMiddleware('brands_list', 'read:brands', inputs, executeBrandsList, sessionId);
     }
   );
 
@@ -58,65 +58,65 @@ function registerTools(server: McpServer, sessionId: string) {
   // --------------------------------------------------------------------------------
 
   server.tool(
-    'dashboard.kpi_overview',
+    'dashboard_kpi_overview',
     'Returns high-level analytical KPIs for a brand, including Search Visibility, Share of Voice, Sentiment, Topic Performance, and Competitor Gaps.',
     dashboardKPIsSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('dashboard.kpi_overview', 'read:dashboard', inputs, executeDashboardKPIs, sessionId);
+      return await executeToolWithMiddleware('dashboard_kpi_overview', 'read:dashboard', inputs, executeDashboardKPIs, sessionId);
     }
   );
 
   server.tool(
-    'query.performance',
+    'query_performance',
     'Returns performance data for top-performing queries, including visibility scores, mentions, and Share of Answer (SOA).',
     queryPerformanceSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('query.performance', 'read:queries', inputs, executeQueryPerformance, sessionId);
+      return await executeToolWithMiddleware('query_performance', 'read:queries', inputs, executeQueryPerformance, sessionId);
     }
   );
 
   server.tool(
-    'topics.performance',
+    'topics_performance',
     'Returns high-level performance data aggregated by topic, including visibility and sentiment across query groups.',
     topicsPerformanceSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('topics.performance', 'read:queries', inputs, executeTopicsPerformance, sessionId);
+      return await executeToolWithMiddleware('topics_performance', 'read:queries', inputs, executeTopicsPerformance, sessionId);
     }
   );
 
   server.tool(
-    'citations.source_attribution',
+    'citations_source_attribution',
     'Returns source attribution data for a brand, showing which domains are citing it and their overall impact.',
     getSourceAttributionSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('citations.source_attribution', 'read:citations', inputs, executeSourceAttribution, sessionId);
+      return await executeToolWithMiddleware('citations_source_attribution', 'read:citations', inputs, executeSourceAttribution, sessionId);
     }
   );
 
   server.tool(
-    'recommendations.list',
+    'recommendations_list',
     'Returns a list of AI-driven strategy recommendations for a specific brand, including actions, reasons, and impact scores.',
     listRecommendationsSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('recommendations.list', 'read:recommendations', inputs, executeListRecommendations, sessionId);
+      return await executeToolWithMiddleware('recommendations_list', 'read:recommendations', inputs, executeListRecommendations, sessionId);
     }
   );
 
   server.tool(
-    'recommendations.get_detail',
+    'recommendations_get_detail',
     'Returns full technical details for a specific recommendation, including deep explanations and focus sources.',
     getRecommendationDetailSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('recommendations.get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail, sessionId);
+      return await executeToolWithMiddleware('recommendations_get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail, sessionId);
     }
   );
 
   server.tool(
-    'domain_readiness.get_audit',
+    'domain_readiness_get_audit',
     'Returns the most recent AEO (Answer Engine Optimization) domain readiness audit results for a specific brand.',
     getDomainAuditSchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('domain_readiness.get_audit', 'read:domain', inputs, executeGetDomainAudit, sessionId);
+      return await executeToolWithMiddleware('domain_readiness_get_audit', 'read:domain', inputs, executeGetDomainAudit, sessionId);
     }
   );
 }

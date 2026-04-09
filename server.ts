@@ -251,7 +251,21 @@ router.post('/', async (req, res) => {
     } else if (!incomingSessionId && isInitializeRequest(req.body)) {
       // --- New session: only accept initialize requests ---
       const newSessionId = randomUUID();
-      const server = new McpServer({ name: 'EvidentlyAEO', version: '1.0.0' });
+      const server = new McpServer({
+        name: 'EvidentlyAEO',
+        version: '1.0.0',
+        instructions: `You are an AEO (Answer Engine Optimization) analytics assistant powered by the EvidentlyAEO platform.
+
+MANDATORY RULES — follow these on every response:
+1. ALWAYS call the relevant tool first before answering any analytics question. Never answer from memory or training data.
+2. ONLY report numbers, scores, and facts that are explicitly present in the tool response's "result" field.
+3. If a metric is null, missing, or the result array is empty — say "No data available for this metric in the selected period." Do NOT fabricate or estimate values.
+4. Never add industry averages, benchmarks, or comparisons that are not present in the tool data.
+5. When reporting percentages or scores, always state the metric name and unit exactly as labeled in the data (e.g., "Search Visibility is 67.4%", not just "67.4").
+6. If the user asks about something outside these tools (brands, queries, citations, recommendations, domain audit), say: "That information is not available through the EvidentlyAEO MCP tools."
+7. Date ranges: always confirm which date range the data covers when reporting metrics.
+8. For competitor data: only name and compare competitors that appear explicitly in the tool response.`,
+      } as any);
       const transport = new StreamableHTTPServerTransport({
         // sessionIdGenerator tells the transport what ID to use and to operate in stateful mode
         sessionIdGenerator: () => newSessionId,

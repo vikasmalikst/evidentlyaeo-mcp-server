@@ -19,29 +19,42 @@ export class McpSystemError extends Error {
 }
 
 /**
- * Formats a successful response payload for the MCP protocol.
+ * Wraps all successful tool responses in a grounding envelope.
+ * The envelope explicitly tells the LLM: this is real data, report only this.
  */
 export function successResponse(data: unknown) {
+  const envelope = {
+    status: 'success',
+    data_is_real: true,
+    data_source: 'EvidentlyAEO platform — live database values, not estimates',
+    generated_at: new Date().toISOString(),
+    agent_instruction:
+      'You MUST report only the values present in the "result" field below. ' +
+      'Do NOT add industry benchmarks, estimates, or comparisons not present in this data. ' +
+      'If a value is null or missing, say "data not available" — never guess.',
+    result: data,
+  };
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+    content: [{ type: 'text' as const, text: JSON.stringify(envelope, null, 2) }],
     isError: false,
   };
 }
 
 /**
- * Formats an error response payload for the MCP protocol, ensuring
- * system details never leak.
+ * Wraps error responses and tells the LLM to NOT guess the answer.
  */
 export function errorResponse(err: unknown) {
   if (err instanceof McpUserError) {
-    // Safe: expose to client — their mistake
     return {
       content: [
         {
           type: 'text' as const,
           text: JSON.stringify(
             {
-              error: true,
+              status: 'error',
+              data_is_real: false,
+              agent_instruction:
+                'A user-facing error occurred. Inform the user exactly as described in "message". Do NOT guess or infer the answer.',
               code: err.code,
               message: err.message,
             },
@@ -54,7 +67,6 @@ export function errorResponse(err: unknown) {
     };
   }
 
-  // System error: log internally but return a generic message to the client
   const detail = err instanceof McpSystemError ? err.internalDetail : String(err);
   console.error('[MCP System Error]', err instanceof Error ? err.message : 'Unknown error', detail);
 
@@ -64,7 +76,10 @@ export function errorResponse(err: unknown) {
         type: 'text' as const,
         text: JSON.stringify(
           {
-            error: true,
+            status: 'error',
+            data_is_real: false,
+            agent_instruction:
+              'An internal server error occurred. Tell the user the data could not be retrieved and ask them to retry. Do NOT infer or estimate the answer.',
             code: 'INTERNAL_ERROR',
             message: 'An internal error occurred. Please try again later.',
           },

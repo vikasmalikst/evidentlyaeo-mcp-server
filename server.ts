@@ -33,9 +33,17 @@ import {
   topicsPerformanceSchema
 } from './tools/queries.tool';
 import {
-  executeDashboardKPIs,
-  dashboardKPIsSchema
+  executeDashboardGetSummary,
+  dashboardGetSummarySchema,
+  executeDashboardListCompetitors,
+  dashboardListCompetitorsSchema,
+  executeDashboardLlmBreakdown,
+  dashboardLlmBreakdownSchema,
+  executeDashboardGetActionItems,
+  dashboardGetActionItemsSchema,
 } from './tools/dashboard.tool';
+import { METRIC_DICTIONARY, DICTIONARY_URI, DICTIONARY_MIME } from './content/dictionary.content';
+import { PROMPTS } from './content/expert-persona.prompt';
 
 // --------------------------------------------------------------------------------
 // Tool Registration Helper
@@ -58,11 +66,38 @@ function registerTools(server: McpServer, sessionId: string) {
   // --------------------------------------------------------------------------------
 
   server.tool(
-    'dashboard_kpi_overview',
-    'Returns high-level analytical KPIs for a brand, including Search Visibility, Share of Voice, Sentiment, Topic Performance, and Competitor Gaps.',
-    dashboardKPIsSchema.shape as any,
+    'dashboard_get_summary',
+    'Returns core KPI summary for a brand: Search Visibility %, Sentiment Score, Brand Presence Rate, total prompts tracked, and top 5 topics. Call this first for any brand performance question.',
+    dashboardGetSummarySchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('dashboard_kpi_overview', 'read:dashboard', inputs, executeDashboardKPIs, sessionId);
+      return await executeToolWithMiddleware('dashboard_get_summary', 'read:dashboard', inputs, executeDashboardGetSummary, sessionId);
+    }
+  );
+
+  server.tool(
+    'dashboard_list_competitors',
+    'Returns competitor comparison data: visibility %, share of voice %, sentiment, and mention counts for all tracked competitors. Call this only when the user asks about competitors or competitive gaps.',
+    dashboardListCompetitorsSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('dashboard_list_competitors', 'read:dashboard', inputs, executeDashboardListCompetitors, sessionId);
+    }
+  );
+
+  server.tool(
+    'dashboard_llm_breakdown',
+    'Returns per-LLM performance breakdown: visibility, share of voice, and sentiment split by AI engine (ChatGPT, Perplexity, Gemini, etc.). Call this only when the user asks about specific AI engine performance.',
+    dashboardLlmBreakdownSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('dashboard_llm_breakdown', 'read:dashboard', inputs, executeDashboardLlmBreakdown, sessionId);
+    }
+  );
+
+  server.tool(
+    'dashboard_get_action_items',
+    'Returns AI-generated action items from the latest dashboard analysis for a brand. Call this when the user asks what to do, what to improve, or for next steps.',
+    dashboardGetActionItemsSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('dashboard_get_action_items', 'read:dashboard', inputs, executeDashboardGetActionItems, sessionId);
     }
   );
 
@@ -119,6 +154,38 @@ function registerTools(server: McpServer, sessionId: string) {
       return await executeToolWithMiddleware('domain_readiness_get_audit', 'read:domain', inputs, executeGetDomainAudit, sessionId);
     }
   );
+}
+
+function registerResources(server: McpServer) {
+  server.resource(
+    'metric-dictionary',
+    DICTIONARY_URI,
+    {
+      mimeType: DICTIONARY_MIME,
+      description:
+        'Definitions for all EvidentlyAEO metrics: Visibility, SOA, Presence Rate, Sentiment, Blind/Brand/Competitor queries, and null value rules. Reference this before interpreting any metric values.',
+    },
+    async () => ({
+      contents: [{
+        uri: DICTIONARY_URI,
+        mimeType: DICTIONARY_MIME,
+        text: METRIC_DICTIONARY,
+      }],
+    })
+  );
+}
+
+function registerPrompts(server: McpServer) {
+  for (const prompt of PROMPTS) {
+    server.prompt(
+      prompt.name,
+      prompt.description,
+      prompt.arguments as any,
+      async (args: any) => ({
+        messages: prompt.getMessages(args),
+      })
+    );
+  }
 }
 
 // --------------------------------------------------------------------------------
@@ -184,10 +251,34 @@ interface SessionEntry {
   dbToken: string;
 }
 
-const serverCache = new LRUCache<string, SessionEntry>({
+const transportCache = new LRUCache<string, SessionEntry>({
   max: 100,
   ttl: 1000 * 60 * 60,
 });
+
+const authCache = new LRUCache<string, { ctx: McpUserContext; dbToken: string }>({
+  max: 500,
+  ttl: 1000 * 60 * 15,
+});
+
+const serverCache = {
+  get: (sid: string): SessionEntry | undefined => {
+    const transport = transportCache.get(sid);
+    const auth = authCache.get(sid);
+    if (!transport) return undefined;
+    if (auth) {
+      transport.ctx = auth.ctx;
+      transport.dbToken = auth.dbToken;
+    }
+    return transport;
+  },
+  set: (sid: string, entry: SessionEntry) => {
+    transportCache.set(sid, entry);
+    authCache.set(sid, { ctx: entry.ctx, dbToken: entry.dbToken });
+  },
+  has: (sid: string) => transportCache.has(sid),
+  keys: () => transportCache.keys(),
+};
 
 const router = Router();
 
@@ -246,6 +337,7 @@ router.post('/', async (req, res) => {
       const session = serverCache.get(incomingSessionId)!;
       session.ctx = ctx;
       session.dbToken = dbToken;
+      serverCache.set(incomingSessionId, session);
       await session.transport.handleRequest(req, res, req.body);
 
     } else if (!incomingSessionId && isInitializeRequest(req.body)) {
@@ -279,6 +371,8 @@ MANDATORY RULES — follow these on every response:
 
       // Register tools FIRST, connect SECOND (wires tools into transport)
       registerTools(server, newSessionId);
+      registerResources(server);
+      registerPrompts(server);
       await server.connect(transport);
 
       // Ensure the session ID is sent to the client in the response header

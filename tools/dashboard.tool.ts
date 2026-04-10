@@ -74,9 +74,9 @@ export async function executeDashboardGetSummary(inputs: any, ctx: any, dbToken:
         total_prompts_tracked: payload.totalQueries,
         total_ai_responses_collected: payload.totalResponses,
         brand_presence_rate_pct: safeDivide(
-          payload.collectorResultsWithBrandPresence,
-          payload.totalBrandRows,
-          'Percentage of collected AI responses where the brand was mentioned',
+          payload.queriesWithBrandPresence,
+          payload.totalQueries,
+          'Percentage of tracked prompts where brand was mentioned at least once',
           100
         ),
       } : null,

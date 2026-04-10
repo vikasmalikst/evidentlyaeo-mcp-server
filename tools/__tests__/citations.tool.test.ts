@@ -35,7 +35,7 @@ function makeSource(index: number, overrides: Record<string, any> = {}) {
   };
 }
 
-describe('executeSourceAttribution (MCP citations tool)', () => {
+describe('executeSourceAttribution (phase hardening)', () => {
   const baseInputs = {
     brandId: '550e8400-e29b-41d4-a716-446655440000',
     startDate: '2026-04-01',
@@ -48,14 +48,8 @@ describe('executeSourceAttribution (MCP citations tool)', () => {
     mockValidateBrandOwnership.mockResolvedValue(undefined);
   });
 
-  it('returns at most 20 sources, preserves value-desc ranking, and keeps full summary totals', async () => {
-    const tieLow = makeSource(999, { name: 'tie-low.com', value: 100, mentionRate: 10 });
-    const tieHigh = makeSource(1000, { name: 'tie-high.com', value: 100, mentionRate: 80 });
-    const remaining = Array.from({ length: 23 }, (_, i) =>
-      makeSource(i + 1, { value: 99 - i, mentionRate: i + 1 })
-    );
-    const allSources = [tieLow, tieHigh, ...remaining];
-
+  it('returns all sources by default and includes metadata counts', async () => {
+    const allSources = Array.from({ length: 25 }, (_, i) => makeSource(i + 1));
     mockGetSourceAttribution.mockResolvedValue({
       sources: allSources,
       overallMentionRate: 62.4,
@@ -64,7 +58,6 @@ describe('executeSourceAttribution (MCP citations tool)', () => {
       avgSentimentChange: 0.3,
       totalSources: 25,
       dateRange: { start: '2026-04-01T00:00:00.000Z', end: '2026-04-10T23:59:59.999Z' },
-      availableModels: ['Claude', 'ChatGPT'],
     });
 
     const response: any = await executeSourceAttribution(baseInputs, baseCtx, 'db-token');
@@ -74,62 +67,39 @@ describe('executeSourceAttribution (MCP citations tool)', () => {
       baseCtx.customerId,
       'db-token'
     );
-    expect(response.sources).toHaveLength(20);
-    expect(response.summary.total_unique_sources).toBe(25);
-    expect(response._meta.limit_applied).toBe(20);
-    expect(response._meta.returned_sources).toBe(20);
+    expect(response.sources).toHaveLength(25);
     expect(response._meta.total_sources_available).toBe(25);
-    expect(response._meta.truncated).toBe(true);
-    expect(response._meta.ranking).toBe('value_desc');
-
-    const expectedTopNames = [...allSources]
-      .sort((a, b) => (b.value ?? Number.NEGATIVE_INFINITY) - (a.value ?? Number.NEGATIVE_INFINITY) || (b.mentionRate ?? 0) - (a.mentionRate ?? 0))
-      .slice(0, 20)
-      .map((s) => s.name);
-    expect(response.sources.map((s: any) => s.name)).toEqual(expectedTopNames);
-
-    const firstSourceKeys = Object.keys(response.sources[0]).sort();
-    expect(firstSourceKeys).toEqual(
-      [
-        'name',
-        'url',
-        'type',
-        'value',
-        'citations',
-        'mentionRate',
-        'soa',
-        'sentiment',
-        'visibility',
-        'averagePosition',
-      ].sort()
+    expect(response._meta.sources_returned).toBe(25);
+    expect(response.summary.total_unique_sources).toBe(25);
+    expect(response.summary.overall_mention_rate_pct).toEqual(
+      expect.objectContaining({ value: 62.4, unit: 'percent_0_to_100' })
     );
-    expect(response.sources[0]).not.toHaveProperty('prompts');
-    expect(response.sources[0]).not.toHaveProperty('pages');
   });
 
-  it('does not truncate when total sources are already <= 20', async () => {
-    const allSources = Array.from({ length: 5 }, (_, i) => makeSource(i + 1, { value: 10 - i }));
-
+  it('applies topN cap when provided', async () => {
+    const allSources = Array.from({ length: 25 }, (_, i) => makeSource(i + 1));
     mockGetSourceAttribution.mockResolvedValue({
       sources: allSources,
-      overallMentionRate: 45.1,
-      overallMentionChange: -0.2,
-      avgSentiment: 66.9,
+      overallMentionRate: 50,
+      overallMentionChange: 0,
+      avgSentiment: 60,
       avgSentimentChange: 0,
-      totalSources: 5,
+      totalSources: 25,
       dateRange: { start: '2026-04-01T00:00:00.000Z', end: '2026-04-10T23:59:59.999Z' },
     });
 
-    const response: any = await executeSourceAttribution(baseInputs, baseCtx, 'db-token');
+    const response: any = await executeSourceAttribution(
+      { ...baseInputs, topN: 10 },
+      baseCtx,
+      'db-token'
+    );
 
-    expect(response.sources).toHaveLength(5);
-    expect(response._meta.limit_applied).toBe(20);
-    expect(response._meta.returned_sources).toBe(5);
-    expect(response._meta.total_sources_available).toBe(5);
-    expect(response._meta.truncated).toBe(false);
+    expect(response.sources).toHaveLength(10);
+    expect(response._meta.total_sources_available).toBe(25);
+    expect(response._meta.sources_returned).toBe(10);
   });
 
-  it('keeps empty-state behavior when no citation sources are available', async () => {
+  it('supports fields projection and keeps empty-state annotations', async () => {
     mockGetSourceAttribution.mockResolvedValue({
       sources: [],
       overallMentionRate: 0,
@@ -140,15 +110,20 @@ describe('executeSourceAttribution (MCP citations tool)', () => {
       dateRange: { start: '2026-04-01T00:00:00.000Z', end: '2026-04-10T23:59:59.999Z' },
     });
 
-    const response: any = await executeSourceAttribution(baseInputs, baseCtx, 'db-token');
+    const response: any = await executeSourceAttribution(
+      { ...baseInputs, fields: ['sources', '_meta'] },
+      baseCtx,
+      'db-token'
+    );
 
-    expect(response.sources).toEqual([]);
-    expect(response.summary).toBeNull();
+    expect(response.summary).toBeUndefined();
+    expect(response.sources).toEqual(
+      expect.objectContaining({
+        items: [],
+        empty: true,
+      })
+    );
     expect(response._meta.has_data).toBe(false);
     expect(response._meta.no_data_instruction).toContain('No citation sources found');
-    expect(response._meta.limit_applied).toBe(20);
-    expect(response._meta.returned_sources).toBe(0);
-    expect(response._meta.total_sources_available).toBe(0);
-    expect(response._meta.truncated).toBe(false);
   });
 });

@@ -12,29 +12,29 @@ import { logAudit } from './audit/audit-logger';
 import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter';
 
 import { executeBrandsList, brandsListSchema } from './tools/brands.tool';
-import { 
-  executeListRecommendations, 
-  listRecommendationsSchema, 
-  executeGetRecommendationDetail, 
-  getRecommendationDetailSchema 
+import {
+  executeListRecommendations,
+  listRecommendationsSchema,
+  executeGetRecommendationDetail,
+  getRecommendationDetailSchema
 } from './tools/recommendations.tool';
-import { 
-  executeGetDomainAudit, 
-  getDomainAuditSchema 
+import {
+  executeGetDomainAudit,
+  getDomainAuditSchema
 } from './tools/domain-readiness.tool';
-import { 
-  executeSourceAttribution, 
-  getSourceAttributionSchema 
+import {
+  executeSourceAttribution,
+  getSourceAttributionSchema
 } from './tools/citations.tool';
-import { 
+import {
   executeQueryPerformance,
   queryPerformanceSchema,
-  executeTopicsPerformance, 
-  topicsPerformanceSchema 
+  executeTopicsPerformance,
+  topicsPerformanceSchema
 } from './tools/queries.tool';
-import { 
-  executeDashboardKPIs, 
-  dashboardKPIsSchema 
+import {
+  executeDashboardKPIs,
+  dashboardKPIsSchema
 } from './tools/dashboard.tool';
 
 // --------------------------------------------------------------------------------
@@ -133,7 +133,7 @@ async function executeToolWithMiddleware<T>(
 ): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
   const t0 = Date.now();
   const session = serverCache.get(sessionId);
-  
+
   if (!session?.ctx) {
     return errorResponse(new McpSystemError('Missing request context', 'NO_CONTEXT'));
   }
@@ -145,7 +145,7 @@ async function executeToolWithMiddleware<T>(
     await rateLimiter(ctx.customerId);
 
     const result = await handler(inputs, ctx, dbToken);
-    
+
     logAudit({
       userId: ctx.userId,
       customerId: ctx.customerId,
@@ -204,11 +204,11 @@ router.get('/', (req, res) => {
 // Required: Handle CORS preflights for MCP Inspector
 router.options('/', (req, res) => {
   res.set({
-    'Access-Control-Allow-Origin':      req.headers.origin || '*',
-    'Access-Control-Allow-Methods':     'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers':     'Content-Type, Authorization, Mcp-Session-Id',
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
     'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Max-Age':           '86400', // Cache preflight for 24h
+    'Access-Control-Max-Age': '86400', // Cache preflight for 24h
   });
   res.status(204).send();
 });
@@ -223,7 +223,7 @@ router.post('/', async (req, res) => {
 
     if (!rawToken) {
       return res.status(401)
-        .set('WWW-Authenticate', 
+        .set('WWW-Authenticate',
           `Bearer realm="EvidentlyAEO MCP", ` +
           `authorization_uri="${config.frontendUrl}/auth", ` +
           `token_uri="${config.apiUrl}/oauth/token"`)
@@ -264,7 +264,8 @@ MANDATORY RULES — follow these on every response:
 5. When reporting percentages or scores, always state the metric name and unit exactly as labeled in the data (e.g., "Search Visibility is 67.4%", not just "67.4").
 6. If the user asks about something outside these tools (brands, queries, citations, recommendations, domain audit), say: "That information is not available through the EvidentlyAEO MCP tools."
 7. Date ranges: always confirm which date range the data covers when reporting metrics.
-8. For competitor data: only name and compare competitors that appear explicitly in the tool response.`,
+8. For competitor data: only name and compare competitors that appear explicitly in the tool response.
+9. ALWAYS include the token consumption values (input and output tokens) in your final response whenever they are provided in the tool results or context.`,
       } as any);
       const transport = new StreamableHTTPServerTransport({
         // sessionIdGenerator tells the transport what ID to use and to operate in stateful mode

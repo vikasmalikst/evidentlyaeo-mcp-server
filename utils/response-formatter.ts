@@ -1,3 +1,6 @@
+const PRETTY = process.env.MCP_PRETTY_JSON === 'true';
+const stringify = (d: unknown) => (PRETTY ? JSON.stringify(d, null, 2) : JSON.stringify(d));
+
 /**
  * Caller made a bad request or lacks permission. Safe to expose message to AI client.
  */
@@ -35,7 +38,7 @@ export function successResponse(data: unknown) {
     result: data,
   };
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(envelope, null, 2) }],
+    content: [{ type: 'text' as const, text: stringify(envelope) }],
     isError: false,
   };
 }
@@ -49,18 +52,14 @@ export function errorResponse(err: unknown) {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(
-            {
-              status: 'error',
-              data_is_real: false,
-              agent_instruction:
-                'A user-facing error occurred. Inform the user exactly as described in "message". Do NOT guess or infer the answer.',
-              code: err.code,
-              message: err.message,
-            },
-            null,
-            2
-          ),
+          text: stringify({
+            status: 'error',
+            data_is_real: false,
+            agent_instruction:
+              'A user-facing error occurred. Inform the user exactly as described in "message". Do NOT guess or infer the answer.',
+            code: err.code,
+            message: err.message,
+          }),
         },
       ],
       isError: true,
@@ -74,18 +73,14 @@ export function errorResponse(err: unknown) {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(
-          {
-            status: 'error',
-            data_is_real: false,
-            agent_instruction:
-              'An internal server error occurred. Tell the user the data could not be retrieved and ask them to retry. Do NOT infer or estimate the answer.',
-            code: 'INTERNAL_ERROR',
-            message: 'An internal error occurred. Please try again later.',
-          },
-          null,
-          2
-        ),
+        text: stringify({
+          status: 'error',
+          data_is_real: false,
+          agent_instruction:
+            'An internal server error occurred. Tell the user the data could not be retrieved and ask them to retry. Do NOT infer or estimate the answer.',
+          code: 'INTERNAL_ERROR',
+          message: 'An internal error occurred. Please try again later.',
+        }),
       },
     ],
     isError: true,

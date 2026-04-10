@@ -4,6 +4,8 @@ import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, collectorsSchema } from './schemas';
 
+const MAX_MCP_CITATIONS = 20;
+
 export const getSourceAttributionSchema = z.object({
   ...brandIdSchema.shape,
   ...dateRangeSchema.shape,
@@ -34,6 +36,26 @@ export async function executeSourceAttribution(inputs: any, ctx: any, dbToken: s
     );
 
     const hasSources = result.sources && result.sources.length > 0;
+    const sortedSources = [...(result.sources || [])].sort(
+      (a: any, b: any) =>
+        (b.value ?? Number.NEGATIVE_INFINITY) - (a.value ?? Number.NEGATIVE_INFINITY) ||
+        (b.mentionRate ?? 0) - (a.mentionRate ?? 0)
+    );
+    const topSources = sortedSources.slice(0, MAX_MCP_CITATIONS);
+    const compactSources = topSources.map((source: any) => ({
+      name: source.name,
+      url: source.url,
+      type: source.type,
+      value: source.value,
+      citations: source.citations,
+      mentionRate: source.mentionRate,
+      soa: source.soa,
+      sentiment: source.sentiment,
+      visibility: source.visibility,
+      averagePosition: source.averagePosition,
+    }));
+    const totalSourcesAvailable = result.totalSources ?? sortedSources.length;
+    const returnedSources = compactSources.length;
 
     return {
       _meta: {
@@ -41,6 +63,11 @@ export async function executeSourceAttribution(inputs: any, ctx: any, dbToken: s
         date_range: dateRangeLabel,
         data_source: 'EvidentlyAEO source attribution — real citation data only',
         has_data: hasSources,
+        limit_applied: MAX_MCP_CITATIONS,
+        returned_sources: returnedSources,
+        total_sources_available: totalSourcesAvailable,
+        truncated: totalSourcesAvailable > returnedSources,
+        ranking: 'value_desc',
         no_data_instruction: hasSources
           ? null
           : 'No citation sources found for this brand in the selected period. Do NOT list likely sources from general knowledge. Tell the user no source data is available.',
@@ -60,7 +87,7 @@ export async function executeSourceAttribution(inputs: any, ctx: any, dbToken: s
             },
           }
         : null,
-      sources: hasSources ? result.sources : [],
+      sources: hasSources ? compactSources : [],
     };
   } catch (error: any) {
     throw new McpSystemError('Failed to fetch source attribution', error.message);

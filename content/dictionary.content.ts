@@ -23,8 +23,8 @@ SHARE OF VOICE / SHARE OF ANSWER (SOA) (%)
   What NULL means: No competitive data collected. Do not estimate.
 
 BRAND PRESENCE RATE (%)
-  What it is: Percentage of tracked prompts where this brand was mentioned at least once.
-  Difference from Visibility: Visibility counts unique queries; Presence Rate counts total prompt volume.
+  What it is: Percentage of tracked prompt responses where this brand was mentioned at least once.
+  Difference from Visibility: Visibility counts unique queries; Presence Rate counts total AI responses.
 
 SENTIMENT SCORE (0–100)
   What it is: Average positivity of brand mentions across all AI responses. 

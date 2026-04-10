@@ -33,14 +33,11 @@ import {
   topicsPerformanceSchema
 } from './tools/queries.tool';
 import {
-  executeDashboardGetSummary,
-  dashboardGetSummarySchema,
-  executeDashboardListCompetitors,
-  dashboardListCompetitorsSchema,
-  executeDashboardLlmBreakdown,
-  dashboardLlmBreakdownSchema,
-  executeDashboardGetActionItems,
-  dashboardGetActionItemsSchema,
+  executeDashboardGetSummary, dashboardGetSummarySchema,
+  executeDashboardListCompetitors, dashboardListCompetitorsSchema,
+  executeDashboardLlmBreakdown, dashboardLlmBreakdownSchema,
+  executeDashboardGetActionItems, dashboardGetActionItemsSchema,
+  executeDashboardKPIs, dashboardKPIsSchema
 } from './tools/dashboard.tool';
 import { METRIC_DICTIONARY, DICTIONARY_URI, DICTIONARY_MIME } from './content/dictionary.content';
 import { PROMPTS } from './content/expert-persona.prompt';

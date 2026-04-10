@@ -278,9 +278,26 @@ const serverCache = {
 };
 
 const router = Router();
+const getRequestTimestamps = new Map<string, number>();
 
 // Required: Inspector and clients probe the endpoint with GET first
 router.get('/', (req, res) => {
+  const clientIp = req.ip || 'unknown';
+  const now = Date.now();
+  const last = getRequestTimestamps.get(clientIp) || 0;
+
+  // Allow at most 1 GET per 10 seconds per IP.
+  if (now - last < 10_000) {
+    return res.status(429).json({ error: 'Too many health checks. Slow down.' });
+  }
+
+  getRequestTimestamps.set(clientIp, now);
+
+  res.set({
+    'Cache-Control': 'public, max-age=30',
+    'X-Content-Type-Options': 'nosniff',
+  });
+
   res.status(200).json({
     name: 'EvidentlyAEO MCP Server',
     version: '1.0.0',

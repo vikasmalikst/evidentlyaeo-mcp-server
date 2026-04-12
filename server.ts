@@ -8,7 +8,7 @@ import { LRUCache } from 'lru-cache';
 import { validateTokenAndIssueShadow, assertScope, McpUserContext } from './auth/token-validator';
 import { config } from '../config/environment';
 import { supabaseAdmin } from '../config/database';
-import { rateLimiter } from './middleware/rate-limiter';
+// import { rateLimiter } from './middleware/rate-limiter';
 import { assertBrandOwnership } from './middleware/brand-guard';
 import { logAudit } from './audit/audit-logger';
 import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter';
@@ -387,7 +387,7 @@ async function executeToolWithMiddleware<T>(
 
   try {
     assertScope(ctx.scopes, requiredScope);
-    await rateLimiter(ctx.customerId, toolName);
+    // await rateLimiter(ctx.customerId, toolName);
 
     if (inputsObj?.brandId && typeof inputsObj.brandId === 'string') {
       await assertBrandOwnership(inputsObj.brandId, ctx.customerId);

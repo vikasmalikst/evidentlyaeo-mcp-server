@@ -9,6 +9,14 @@ const RATE = 60; // tokens per minute
 const WINDOW_MS = 60_000; // 1 minute window
 const buckets = new Map<string, Bucket>();
 
+const TOOL_COSTS: Record<string, number> = {
+  dashboard_get_summary: 1,
+  query_performance: 2,
+  citations_source_attribution: 2,
+  recommendations_list: 1,
+  domain_readiness_get_audit: 3,
+};
+
 /**
  * Implements an in-process continuous refill token bucket rate limiter.
  * Throws McpUserError if rate limit is exceeded.
@@ -17,7 +25,7 @@ const buckets = new Map<string, Bucket>();
  * or container replicas), this bucket is not shared. Consider replacing with a Redis-backed 
  * sliding window limiter (e.g. ioredis) for production scale.
  */
-export async function rateLimiter(customerId: string): Promise<void> {
+export async function rateLimiter(customerId: string, toolName?: string): Promise<void> {
   const now = Date.now();
   const bucket = buckets.get(customerId) ?? { tokens: RATE, lastRefill: now };
 
@@ -26,11 +34,13 @@ export async function rateLimiter(customerId: string): Promise<void> {
   bucket.tokens = Math.min(RATE, bucket.tokens + (elapsed / WINDOW_MS) * RATE);
   bucket.lastRefill = now;
 
-  if (bucket.tokens < 1) {
-    throw new McpUserError('Rate limit exceeded: 60 calls/minute', 'RATE_LIMIT_EXCEEDED');
+  const cost = TOOL_COSTS[toolName ?? ''] ?? 1;
+
+  if (bucket.tokens < cost) {
+    throw new McpUserError('Rate limit exceeded: 60 tokens/minute', 'RATE_LIMIT_EXCEEDED');
   }
 
-  bucket.tokens -= 1;
+  bucket.tokens -= cost;
   buckets.set(customerId, bucket);
 }
 

@@ -7,9 +7,12 @@ import { LRUCache } from 'lru-cache';
 
 import { validateTokenAndIssueShadow, assertScope, McpUserContext } from './auth/token-validator';
 import { config } from '../config/environment';
+import { supabaseAdmin } from '../config/database';
 import { rateLimiter } from './middleware/rate-limiter';
+import { assertBrandOwnership } from './middleware/brand-guard';
 import { logAudit } from './audit/audit-logger';
 import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter';
+import { buildCacheKey, getCached, setCached } from './cache/tool-cache';
 
 import { executeBrandsList, brandsListSchema } from './tools/brands.tool';
 import {
@@ -54,7 +57,7 @@ function registerTools(server: McpServer, sessionId: string) {
   // that causes TypeScript compiler OOM. Remove once SDK ships a fix (tracked in v2).
   server.tool(
     'brands_list',
-    'Returns all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date.',
+    'Returns all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date. Call this when a brandId is missing. Do NOT call this if the user already provided a valid brandId.',
     brandsListSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('brands_list', 'read:brands', inputs, executeBrandsList, sessionId);
@@ -199,7 +202,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'citations_source_attribution',
-    'Returns source attribution data for a brand, showing which domains are citing it and their overall impact.',
+    'Returns source attribution for a brand, including citing domains and impact metrics. Call this when the user asks about citation sources or domain attribution. Do NOT call this for query-level or topic-level performance.',
     getSourceAttributionSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_source_attribution', 'read:citations', inputs, executeSourceAttribution, sessionId);
@@ -208,7 +211,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'recommendations_list',
-    'Returns a list of AI-driven strategy recommendations for a specific brand, including actions, reasons, and impact scores.',
+    'Returns strategy recommendations for a brand with actions, reasons, and impact scores. Call this when the user asks what to improve next. Do NOT call this for raw KPI retrieval.',
     listRecommendationsSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('recommendations_list', 'read:recommendations', inputs, executeListRecommendations, sessionId);
@@ -217,7 +220,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'recommendations_get_detail',
-    'Returns full technical details for a specific recommendation, including deep explanations and focus sources.',
+    'Returns full detail for a specific recommendation ID. Call this only after obtaining an ID from recommendations_list. Do NOT call this to list recommendations.',
     getRecommendationDetailSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('recommendations_get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail, sessionId);
@@ -226,7 +229,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'domain_readiness_get_audit',
-    'Returns the most recent AEO (Answer Engine Optimization) domain readiness audit results for a specific brand.',
+    'Returns the latest domain readiness audit for a brand. Call this for website/domain readiness questions. Do NOT call this for citation, query, or dashboard KPI analysis.',
     getDomainAuditSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('domain_readiness_get_audit', 'read:domain', inputs, executeGetDomainAudit, sessionId);
@@ -284,31 +287,60 @@ async function executeToolWithMiddleware<T>(
   }
 
   const { ctx, dbToken } = session;
+  const inputsObj = (inputs as Record<string, unknown>) || {};
+  const auditBase = {
+    userId: ctx.userId,
+    customerId: ctx.customerId,
+    toolName,
+    inputs: inputsObj,
+    scopeUsed: requiredScope,
+  };
 
   try {
     assertScope(ctx.scopes, requiredScope);
-    await rateLimiter(ctx.customerId);
+    await rateLimiter(ctx.customerId, toolName);
+
+    if (inputsObj?.brandId && typeof inputsObj.brandId === 'string') {
+      await assertBrandOwnership(inputsObj.brandId, ctx.customerId);
+    }
+
+    const cacheKey = buildCacheKey(
+      toolName,
+      ctx.customerId,
+      (inputsObj?.brandId as string) ?? 'global',
+      inputsObj
+    );
+    const cached = getCached(cacheKey);
+    if (cached) {
+      const responseText = JSON.stringify(cached);
+      logAudit({
+        ...auditBase,
+        outcome: 'success',
+        durationMs: Date.now() - t0,
+        cacheHit: true,
+        responseBytes: responseText.length,
+        estimatedTokens: Math.ceil(responseText.length / 4),
+      });
+      return successResponse(cached);
+    }
 
     const result = await handler(inputs, ctx, dbToken);
-
+    setCached(cacheKey, result);
+    const responseText = JSON.stringify(result);
+    
     logAudit({
-      userId: ctx.userId,
-      customerId: ctx.customerId,
-      toolName,
-      inputs: inputs as Record<string, unknown>,
-      scopeUsed: requiredScope,
+      ...auditBase,
       outcome: 'success',
       durationMs: Date.now() - t0,
+      cacheHit: false,
+      responseBytes: responseText.length,
+      estimatedTokens: Math.ceil(responseText.length / 4),
     });
 
     return successResponse(result);
   } catch (error) {
     logAudit({
-      userId: ctx?.userId ?? 'anonymous',
-      customerId: ctx?.customerId ?? 'unknown',
-      toolName,
-      inputs: (inputs as Record<string, unknown>) || {},
-      scopeUsed: requiredScope,
+      ...auditBase,
       outcome: error instanceof McpUserError ? 'user_error' : 'system_error',
       errorCode: error instanceof McpUserError ? error.code : 'INTERNAL_ERROR',
       durationMs: Date.now() - t0,
@@ -387,6 +419,16 @@ router.get('/', (req, res) => {
   });
 });
 
+router.get('/health', async (_req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from('api_keys').select('id').limit(1);
+    if (error) throw error;
+    res.status(200).json({ status: 'ok', db: 'connected', ts: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ status: 'degraded', db: 'unreachable' });
+  }
+});
+
 // Required: Handle CORS preflights for MCP Inspector
 router.options('/', (req, res) => {
   res.set({
@@ -461,6 +503,10 @@ MANDATORY RULES — follow these on every response:
         // under the exact ID the transport will send to the client in the response header
         onsessioninitialized: (sid) => {
           serverCache.set(sid, { server, transport, ctx, dbToken });
+          transport.onclose = () => {
+            transportCache.delete(sid);
+            authCache.delete(sid);
+          };
         },
       });
 

@@ -11,6 +11,8 @@ export interface AuditLogEntry {
   errorCode?: string;
   durationMs: number;
   cacheHit?: boolean;
+  responseBytes?: number;
+  estimatedTokens?: number;
 }
 
 /**
@@ -63,6 +65,8 @@ export function logAudit(entry: AuditLogEntry): void {
       error_code: entry.errorCode || null,
       duration_ms: entry.durationMs,
       cache_hit: entry.cacheHit || false,
+      response_bytes: entry.responseBytes ?? null,
+      estimated_tokens: entry.estimatedTokens ?? null,
     })
     .then(({ error }) => {
       if (error) {

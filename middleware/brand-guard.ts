@@ -29,3 +29,13 @@ export async function validateBrandOwnership(
 
   return data as BrandRow;
 }
+
+/**
+ * Middleware-friendly helper used in executeToolWithMiddleware.
+ */
+export async function assertBrandOwnership(
+  brandId: string,
+  customerId: string
+): Promise<void> {
+  await validateBrandOwnership(brandId, customerId, '');
+}

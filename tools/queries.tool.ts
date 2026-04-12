@@ -529,6 +529,134 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tool 5 — queries_trend
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Schema for queries_trend */
+export const queriesTrendSchema = z.object({
+  ...brandIdSchema.shape,
+  ...collectorsSchema.shape,
+  granularity: z.enum(['week', 'month']).optional().describe(
+    'Time period granularity. Default "week" (7-day periods).'
+  ),
+  periods: z.number().int().min(2).max(8).optional().describe(
+    'Number of periods to compare. Default 4. Minimum 2.'
+  ),
+  includeMovers: z.boolean().optional().describe(
+    'Set true to include the top 3 queries that improved most and top 3 that declined most this period. Default false.'
+  ),
+});
+
+/**
+ * Returns historical trends for query visibility and mentions.
+ * Pre-computes deltas so Claude doesn't have to.
+ */
+export async function executeQueriesTrend(inputs: any, ctx: any, dbToken: string) {
+  const { brandId, collectors, granularity = 'week', periods = 4, includeMovers = false } = inputs;
+  await validateBrandOwnership(brandId, ctx.customerId, dbToken);
+
+  const daysPerPeriod = granularity === 'month' ? 30 : 7;
+  const now = new Date();
+  const periodResults: any[] = [];
+
+  try {
+    for (let i = 0; i < periods; i++) {
+      const end = new Date(now.getTime() - i * daysPerPeriod * 24 * 60 * 60 * 1000);
+      const start = new Date(now.getTime() - (i + 1) * daysPerPeriod * 24 * 60 * 60 * 1000);
+      
+      const startIso = start.toISOString();
+      const endIso = end.toISOString();
+      const label = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${end.toLocaleDateString('en-US', { day: 'numeric' })}`;
+
+      // Reuse the shared fetch function (uses 'prompts_shared' cache prefix)
+      const { data } = await fetchPromptAnalytics({ brandId, startDate: startIso, endDate: endIso, collectors }, ctx.customerId);
+      
+      const allPrompts = extractAllPrompts(data);
+      const deduplicated = deduplicateByQueryText(allPrompts);
+      
+      const avgVisibility = deduplicated.length > 0 
+        ? deduplicated.reduce((sum: number, p: any) => sum + (p.visibilityScore ?? 0), 0) / deduplicated.length 
+        : 0;
+      
+      const totalMentions = deduplicated.reduce((sum: number, p: any) => sum + (p.mentions ?? 0), 0);
+
+      periodResults.push({
+        period_label: label,
+        avg_visibility_score: r1(avgVisibility),
+        total_mentions,
+        unique_query_count: deduplicated.length,
+        _prompts: deduplicated // Temporary for movers calculation
+      });
+    }
+
+    // Compute deltas
+    const finalPeriods = periodResults.map((p, idx) => {
+      const prev = periodResults[idx + 1];
+      let delta_visibility = null;
+      let delta_mentions = null;
+
+      if (prev) {
+        if (prev.avg_visibility_score !== 0 && prev.avg_visibility_score != null) {
+          delta_visibility = r1(((p.avg_visibility_score! - prev.avg_visibility_score!) / prev.avg_visibility_score!) * 100);
+        }
+        if (prev.total_mentions !== 0 && prev.total_mentions != null) {
+          delta_mentions = r1(((p.total_mentions! - prev.total_mentions!) / prev.total_mentions!) * 100);
+        }
+      }
+
+      // Remove internal _prompts field from output
+      const { _prompts, ...cleanPeriod } = p;
+      return {
+        ...cleanPeriod,
+        delta_visibility,
+        delta_mentions
+      };
+    });
+
+    let movers = null;
+    if (includeMovers && periodResults.length >= 2) {
+      const current = periodResults[0];
+      const previous = periodResults[1];
+      
+      const currentMap = new Map(current._prompts.map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
+      const prevMap = new Map(previous._prompts.map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
+
+      const changes: any[] = [];
+      for (const [text, p] of currentMap.entries()) {
+        const prevP = prevMap.get(text);
+        if (prevP) {
+          const delta = (p.visibilityScore ?? 0) - (prevP.visibilityScore ?? 0);
+          changes.push({
+            query_text: p.queryText,
+            visibility_current: r1(p.visibilityScore),
+            visibility_previous: r1(prevP.visibilityScore),
+            delta: r1(delta)
+          });
+        }
+      }
+
+      changes.sort((a, b) => b.delta - a.delta);
+      movers = {
+        top_gainers: changes.slice(0, 3).filter(c => c.delta > 0),
+        top_losers: [...changes].sort((a, b) => a.delta - b.delta).slice(0, 3).filter(c => c.delta < 0)
+      };
+    }
+
+    return {
+      periods: finalPeriods,
+      movers,
+      _meta: {
+        brand_id: brandId,
+        granularity,
+        data_source: 'EvidentlyAEO prompt analytics trend comparison'
+      }
+    };
+  } catch (error: any) {
+    throw new McpSystemError('Failed to compute query trends', error.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Backward-Compatible Alias (deprecated — remove after server.ts is updated)
 // ─────────────────────────────────────────────────────────────────────────────
 

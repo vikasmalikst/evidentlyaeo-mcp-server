@@ -26,8 +26,11 @@ import {
   getDomainAuditSchema
 } from './tools/domain-readiness.tool';
 import {
-  executeSourceAttribution,
-  getSourceAttributionSchema
+  executeCitationsTopSources,    citationsTopSourcesSchema,
+  executeCitationsSourceDetail,  citationsSourceDetailSchema,
+  executeCitationsCompetitorGap, citationsCompetitorGapSchema,
+  executeCitationsTrend,         citationsTrendSchema,
+  executeSourceAttribution,      getSourceAttributionSchema
 } from './tools/citations.tool';
 import {
   executeQueriesSummary,            queriesSummarySchema,
@@ -37,6 +40,7 @@ import {
   // Deprecated alias — kept to avoid breaking existing Claude Desktop sessions.
   // Remove once all sessions have cycled through a fresh initialize request.
   executeQueryPerformance,          queryPerformanceSchema,
+  executeQueriesTrend,              queriesTrendSchema,
 } from './tools/queries.tool';
 import {
   executeDashboardGetSummary, dashboardGetSummarySchema,
@@ -184,6 +188,21 @@ function registerTools(server: McpServer, sessionId: string) {
     }
   );
 
+  server.tool(
+    'queries_trend',
+    'Returns week-over-week or month-over-month change in overall query visibility, mention volume, ' +
+    'and optionally the individual queries that moved most (gainers and losers). ' +
+    'Deltas are pre-computed — do NOT call queries_summary twice for different dates to compute manually. ' +
+    'CALL THIS when the user asks about visibility trends, whether performance is improving or declining, ' +
+    'what changed this week/month, or which queries gained or lost the most. ' +
+    'Set includeMovers: true ONLY when the user explicitly asks which queries moved the most. ' +
+    'Do NOT use this for current snapshot data — use queries_summary for that.',
+    queriesTrendSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('queries_trend', 'read:queries', inputs, executeQueriesTrend, sessionId);
+    }
+  );
+
   // --------------------------------------------------------------------------------
   // DEPRECATED — query_performance
   // Kept as alias during Claude Desktop config refresh window.
@@ -200,9 +219,79 @@ function registerTools(server: McpServer, sessionId: string) {
     }
   );
 
+  // ─────────────────────────────────────────────────────────────────
+  // Citation Intelligence Tools (v2 — 4-tool tiered architecture)
+  //
+  // Tier 1  citations_top_sources       — default, call first for any citation question
+  // Tier 2  citations_source_detail     — single domain deep dive
+  // Tier 2  citations_competitor_gap    — domains citing competitors not brand
+  // Tier 3  citations_trend             — period-over-period trend
+  // ─────────────────────────────────────────────────────────────────
+
+  server.tool(
+    'citations_top_sources',
+    'Returns the top domains/websites citing this brand in AI responses, ranked by mention count. ' +
+    'Each row: domain, mention_count, mention_rate_pct (0–100), sentiment_score (0–100). ' +
+    'ALWAYS call this first for any question about citation sources, which websites mention the brand, ' +
+    'or citation performance. ' +
+    'Do NOT call citations_source_attribution for these questions. ' +
+    'Do NOT call citations_source_detail unless the user names a specific domain. ' +
+    'Do NOT call citations_trend unless the user asks about change over time.',
+    citationsTopSourcesSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('citations_top_sources', 'read:citations', inputs, executeCitationsTopSources, sessionId);
+    }
+  );
+
+  server.tool(
+    'citations_source_detail',
+    'Returns full citation analytics for ONE specific domain. ' +
+    'Includes mention count, sentiment breakdown, and per-collector data for that domain. ' +
+    'ONLY call this when the user names a specific website or domain (e.g. "How does Forbes cite me?"). ' +
+    'Requires the exact domain string — call citations_top_sources first if you do not know it. ' +
+    'Do NOT call this to get a list of sources — use citations_top_sources for that.',
+    citationsSourceDetailSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('citations_source_detail', 'read:citations', inputs, executeCitationsSourceDetail, sessionId);
+    }
+  );
+
+  server.tool(
+    'citations_competitor_gap',
+    'Returns domains that cite tracked competitors but NOT this brand — sorted by opportunity size. ' +
+    'Use this to identify citation gap opportunities and outreach targets for AEO content strategy. ' +
+    'CALL THIS when the user asks: which sources cite competitors but not us, ' +
+    'where are we missing citations, what are our citation gap opportunities, ' +
+    'or where should we build backlinks/content for AI citation. ' +
+    'Do NOT call this for general citation performance — use citations_top_sources instead.',
+    citationsCompetitorGapSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('citations_competitor_gap', 'read:citations', inputs, executeCitationsCompetitorGap, sessionId);
+    }
+  );
+
+  server.tool(
+    'citations_trend',
+    'Returns week-over-week or month-over-month change in citation volume, mention rate, and sentiment. ' +
+    'Deltas are pre-computed server-side — do NOT call this tool twice for different dates and compute manually. ' +
+    'CALL THIS when the user asks about trends, changes, growth, improvement, or decline in citations over time. ' +
+    'Do NOT call this for current snapshot data — use citations_top_sources for that. ' +
+    'Do NOT call citations_source_attribution for trend questions.',
+    citationsTrendSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('citations_trend', 'read:citations', inputs, executeCitationsTrend, sessionId);
+    }
+  );
+
   server.tool(
     'citations_source_attribution',
-    'Returns source attribution for a brand, including citing domains and impact metrics. Call this when the user asks about citation sources or domain attribution. Do NOT call this for query-level or topic-level performance.',
+    '[LEGACY — prefer citations_top_sources for most questions] ' +
+    'Returns raw source attribution data for a brand. ' +
+    'For the top citing domains: use citations_top_sources. ' +
+    'For a specific domain detail: use citations_source_detail. ' +
+    'For competitor citation gaps: use citations_competitor_gap. ' +
+    'For citation trends over time: use citations_trend. ' +
+    'Only call this tool if none of the above tools apply.',
     getSourceAttributionSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_source_attribution', 'read:citations', inputs, executeSourceAttribution, sessionId);

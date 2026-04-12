@@ -96,13 +96,13 @@ function r1(v: number | null | undefined): number | null {
  */
 function slimPrompt(p: any) {
   return {
-    query_text:             p.queryText               ?? null,
-    query_type:             p.queryType               ?? null,
-    visibility_score:       r1(p.visibilityScore)      ?? null,
-    share_of_answer_score:  r1(p.soaScore)             ?? null,
-    brand_mentions:         p.mentions                 ?? null,
-    brand_presence_pct:     r1(p.brandPresencePercentage) ?? null,
-    topic_name:             p._topicName               ?? null,
+    query_text: p.queryText ?? null,
+    query_type: p.queryType ?? null,
+    visibility_score: r1(p.visibilityScore) ?? null,
+    share_of_answer_score: r1(p.soaScore) ?? null,
+    brand_mentions: p.mentions ?? null,
+    brand_presence_pct: r1(p.brandPresencePercentage) ?? null,
+    topic_name: p._topicName ?? null,
   };
 }
 
@@ -236,28 +236,8 @@ export const topicsPerformanceSchema = z.object({
 /** Backward-compat schema alias — delegates to queriesSummarySchema */
 export const queryPerformanceSchema = queriesSummarySchema;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tool 1 — queries_summary  (Tier 1 — DEFAULT entry point)
-// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Returns the top N queries for a brand with 7 slim fields per row.
- *
- * Field semantics exposed to Claude:
- *   query_text            — the tracked question/query string
- *   query_type            — 'blind' (= neutral/unprompted) | 'brand' | 'competitor'
- *   visibility_score      — 0–100. How often the brand appears in AI answers for
- *                           this query. 100 = always present. null = no data.
- *   share_of_answer_score — 0–100. Brand's share of the total answer content
- *                           on this query across all collectors. null = no data.
- *   brand_mentions        — integer count of times brand was mentioned for this query.
- *   brand_presence_pct    — % of AI engines (collectors) that mentioned the brand
- *                           for this query. null = no data.
- *   topic_name            — which topic group this query belongs to.
- *
- * Deduplication: the same query appearing in multiple topics is merged here,
- * keeping the highest visibility_score instance, so Claude sees each query once.
- */
+
 export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, limit = 20, queryType = 'all', fields } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
@@ -284,24 +264,24 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
   const result = sorted.length === 0 ? {
     queries: annotateEmptyArray(queryTypeLabel, `brand ${brandId} in this date range`),
     _meta: {
-      brand_id:          brandId,
+      brand_id: brandId,
       query_type_filter: queryType,
-      cache_hit:         cacheHit,
+      cache_hit: cacheHit,
     },
   } : {
     queries: sorted,
     total_returned: sorted.length,
     _meta: {
-      brand_id:          brandId,
+      brand_id: brandId,
       query_type_filter: queryType,
-      query_type_note:   'blind = neutral = unprompted (no brand name in query). brand = explicit brand mention. competitor = explicit competitor mention.',
-      date_range:        { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
-      data_source:       'EvidentlyAEO prompt analytics — real tracked queries only. Do not extrapolate or estimate unlisted queries.',
+      query_type_note: 'blind = neutral = unprompted (no brand name in query). brand = explicit brand mention. competitor = explicit competitor mention.',
+      date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      data_source: 'EvidentlyAEO prompt analytics — real tracked queries only. Do not extrapolate or estimate unlisted queries.',
       field_guide: {
-        visibility_score:      '0–100. Higher = brand appears more often in AI answers for this query.',
+        visibility_score: '0–100. Higher = brand appears more often in AI answers for this query.',
         share_of_answer_score: '0–100. Higher = brand occupies more of the answer content.',
-        brand_presence_pct:    '0–100. % of AI engines that mentioned the brand for this query.',
-        null_values:           'null means no data was collected for this metric in the selected period. Do NOT report null as 0 or as a score.',
+        brand_presence_pct: '0–100. % of AI engines that mentioned the brand for this query.',
+        null_values: 'null means no data was collected for this metric in the selected period. Do NOT report null as 0 or as a score.',
       },
       cache_hit: cacheHit,
     },
@@ -310,21 +290,8 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
   return projectFields(result as any, fields);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tool 2 — queries_competitor_overlap  (Tier 2 — competitive gap drill-down)
-// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Returns queries where tracked competitors also appear, with a pre-computed
- * visibilityGap so Claude never needs to do arithmetic.
- *
- *   visibilityGap = our visibility_score − competitor_visibility_score
- *   Negative = competitor leads us. Positive = we lead competitor.
- *   Results are sorted by most negative gap first (worst competitive losses at top).
- *
- * Only queries that have at least one competitor in competitorVisibilityMap are
- * included. If competitorName is specified, only that competitor's gap is returned.
- */
+
 export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, limit = 20, queryType = 'all', competitorName, fields } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
@@ -342,8 +309,8 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
   const rows: any[] = [];
   for (const p of prompts) {
     const compVisMap: Record<string, number> = p.competitorVisibilityMap ?? {};
-    const compMentMap: Record<string, number> = p.competitorMentionsMap  ?? {};
-    const compSoaMap:  Record<string, number> = p.competitorSoaMap       ?? {};
+    const compMentMap: Record<string, number> = p.competitorMentionsMap ?? {};
+    const compSoaMap: Record<string, number> = p.competitorSoaMap ?? {};
 
     const competitors = Object.keys(compVisMap).filter(c =>
       competitorName ? c.toLowerCase() === competitorName.toLowerCase() : true
@@ -351,20 +318,20 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
     if (competitors.length === 0) continue;
 
     for (const comp of competitors) {
-      const ourScore   = r1(p.visibilityScore) ?? null;
-      const theirScore = r1(compVisMap[comp])  ?? null;
+      const ourScore = r1(p.visibilityScore) ?? null;
+      const theirScore = r1(compVisMap[comp]) ?? null;
       const gap = (ourScore != null && theirScore != null) ? r1(ourScore - theirScore) : null;
 
       rows.push({
-        query_text:                    p.queryText   ?? null,
-        query_type:                    p.queryType   ?? null,
-        topic_name:                    p._topicName  ?? null,
-        our_visibility_score:          ourScore,
-        competitor_name:               comp,
-        competitor_visibility_score:   theirScore,
-        visibility_gap:                gap,
-        competitor_mentions:           compMentMap[comp] ?? null,
-        competitor_soa_score:          r1(compSoaMap[comp]) ?? null,
+        query_text: p.queryText ?? null,
+        query_type: p.queryType ?? null,
+        topic_name: p._topicName ?? null,
+        our_visibility_score: ourScore,
+        competitor_name: comp,
+        competitor_visibility_score: theirScore,
+        visibility_gap: gap,
+        competitor_mentions: compMentMap[comp] ?? null,
+        competitor_soa_score: r1(compSoaMap[comp]) ?? null,
       });
     }
   }
@@ -383,13 +350,13 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
     competitor_overlap: sliced,
     total_returned: sliced.length,
     _meta: {
-      brand_id:        brandId,
+      brand_id: brandId,
       competitor_filter: competitorName ?? 'all tracked competitors',
-      date_range:      { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
-      data_source:     'EvidentlyAEO prompt analytics — only queries with tracked competitor data.',
+      date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      data_source: 'EvidentlyAEO prompt analytics — only queries with tracked competitor data.',
       field_guide: {
         visibility_gap: 'our_visibility_score − competitor_visibility_score. Negative = competitor leads us on this query. Positive = we lead. Results sorted by worst gap first.',
-        null_values:    'null means no data for that metric. Do NOT report null as 0.',
+        null_values: 'null means no data for that metric. Do NOT report null as 0.',
       },
       cache_hit: cacheHit,
     },
@@ -434,12 +401,12 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
         text: JSON.stringify({
           collector_breakdown: null,
           _meta: {
-            brand_id:       brandId,
-            query_text:     queryText,
-            found:          false,
-            message:        `No data found for query "${queryText}" in this date range. ` +
-                            `Use queries_summary to see available query texts.`,
-            cache_hit:      cacheHit,
+            brand_id: brandId,
+            query_text: queryText,
+            found: false,
+            message: `No data found for query "${queryText}" in this date range. ` +
+              `Use queries_summary to see available query texts.`,
+            cache_hit: cacheHit,
           },
         }),
       }],
@@ -449,10 +416,10 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
   const responses: any[] = match.responses ?? [];
   const breakdown = responses.map((r: any) => {
     const row: any = {
-      collector:          r.collectorType    ?? null,
-      brand_mentions:     r.mentions         ?? null,
-      avg_position:       r1(r.averagePosition) ?? null,
-      soa_score:          r1(r.soaScore)     ?? null,
+      collector: r.collectorType ?? null,
+      brand_mentions: r.mentions ?? null,
+      avg_position: r1(r.averagePosition) ?? null,
+      soa_score: r1(r.soaScore) ?? null,
     };
     if (includeCompetitors && r.competitorVisibilityMap) {
       row.competitor_visibility = Object.fromEntries(
@@ -464,24 +431,24 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
   });
 
   const result = {
-    query_text:          match.queryText,
-    query_type:          match.queryType ?? null,
-    query_type_note:     match.queryType === 'blind'
+    query_text: match.queryText,
+    query_type: match.queryType ?? null,
+    query_type_note: match.queryType === 'blind'
       ? 'blind = neutral/unprompted — no brand name in query. Measures organic AI discoverability.'
       : null,
-    overall_visibility:  r1(match.visibilityScore) ?? null,
-    overall_soa:         r1(match.soaScore)         ?? null,
+    overall_visibility: r1(match.visibilityScore) ?? null,
+    overall_soa: r1(match.soaScore) ?? null,
     collector_breakdown: breakdown,
     _meta: {
-      brand_id:              brandId,
-      date_range:            { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
-      collectors_returned:   breakdown.length,
-      competitors_included:  includeCompetitors,
-      data_source:           'EvidentlyAEO prompt analytics — real collector data only.',
+      brand_id: brandId,
+      date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      collectors_returned: breakdown.length,
+      competitors_included: includeCompetitors,
+      data_source: 'EvidentlyAEO prompt analytics — real collector data only.',
       field_guide: {
-        soa_score:    '0–100. Brand share of the answer on this collector for this query.',
+        soa_score: '0–100. Brand share of the answer on this collector for this query.',
         avg_position: 'Lower = brand appears earlier in the AI response. null = brand not mentioned.',
-        null_values:  'null = no data. Do NOT report null as 0.',
+        null_values: 'null = no data. Do NOT report null as 0.',
       },
       cache_hit: cacheHit,
     },
@@ -501,27 +468,27 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
   const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
 
   const topics = ((data as any).topics || []).map((t: any) => ({
-    topic_name:                    t.name              ?? null,
-    prompt_count:                  t.promptCount       ?? null,
-    volume_count:                  t.volumeCount       ?? null,
-    visibility_score_0_to_100:     r1(t.visibilityScore)  ?? null,
-    sentiment_score_0_to_100:      r1(t.sentimentScore)   ?? null,
-    total_mentions:                t.mentions              ?? null,
-    share_of_answer_score:         r1(t.soaScore)          ?? null,
-    brand_presence_pct:            r1(t.brandPresencePercentage) ?? null,
+    topic_name: t.name ?? null,
+    prompt_count: t.promptCount ?? null,
+    volume_count: t.volumeCount ?? null,
+    visibility_score_0_to_100: r1(t.visibilityScore) ?? null,
+    sentiment_score_0_to_100: r1(t.sentimentScore) ?? null,
+    total_mentions: t.mentions ?? null,
+    share_of_answer_score: r1(t.soaScore) ?? null,
+    brand_presence_pct: r1(t.brandPresencePercentage) ?? null,
   }));
 
   const result = topics.length === 0 ? {
     topics: annotateEmptyArray('topics', `brand ${brandId} in this date range`),
-    _meta:  { brand_id: brandId, cache_hit: cacheHit },
+    _meta: { brand_id: brandId, cache_hit: cacheHit },
   } : {
     topics,
     total_topics: topics.length,
     _meta: {
-      brand_id:    brandId,
-      date_range:  { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      brand_id: brandId,
+      date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       data_source: 'EvidentlyAEO topic analytics — real tracked data only',
-      cache_hit:   cacheHit,
+      cache_hit: cacheHit,
     },
   };
 
@@ -563,34 +530,34 @@ export async function executeQueriesTrend(inputs: any, ctx: any, dbToken: string
     for (let i = 0; i < periods; i++) {
       const end = new Date(now.getTime() - i * daysPerPeriod * 24 * 60 * 60 * 1000);
       const start = new Date(now.getTime() - (i + 1) * daysPerPeriod * 24 * 60 * 60 * 1000);
-      
+
       const startIso = start.toISOString();
       const endIso = end.toISOString();
       const label = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${end.toLocaleDateString('en-US', { day: 'numeric' })}`;
 
       // Reuse the shared fetch function (uses 'prompts_shared' cache prefix)
       const { data } = await fetchPromptAnalytics({ brandId, startDate: startIso, endDate: endIso, collectors }, ctx.customerId);
-      
+
       const allPrompts = extractAllPrompts(data);
       const deduplicated = deduplicateByQueryText(allPrompts);
-      
-      const avgVisibility = deduplicated.length > 0 
-        ? deduplicated.reduce((sum: number, p: any) => sum + (p.visibilityScore ?? 0), 0) / deduplicated.length 
+
+      const avgVisibility = deduplicated.length > 0
+        ? (deduplicated as any[]).reduce((sum: number, p: any) => sum + (p.visibilityScore ?? 0), 0) / deduplicated.length
         : 0;
-      
-      const totalMentions = deduplicated.reduce((sum: number, p: any) => sum + (p.mentions ?? 0), 0);
+
+      const totalMentions = (deduplicated as any[]).reduce((sum: number, p: any) => sum + (p.mentions ?? 0), 0);
 
       periodResults.push({
         period_label: label,
         avg_visibility_score: r1(avgVisibility),
-        total_mentions,
+        total_mentions: totalMentions,
         unique_query_count: deduplicated.length,
         _prompts: deduplicated // Temporary for movers calculation
       });
     }
 
     // Compute deltas
-    const finalPeriods = periodResults.map((p, idx) => {
+    const finalPeriods = periodResults.map((p: any, idx: number) => {
       const prev = periodResults[idx + 1];
       let delta_visibility = null;
       let delta_mentions = null;
@@ -617,13 +584,14 @@ export async function executeQueriesTrend(inputs: any, ctx: any, dbToken: string
     if (includeMovers && periodResults.length >= 2) {
       const current = periodResults[0];
       const previous = periodResults[1];
-      
-      const currentMap = new Map(current._prompts.map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
-      const prevMap = new Map(previous._prompts.map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
+
+      const currentMap = new Map<string, any>((current._prompts as any[]).map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
+      const prevMap = new Map<string, any>((previous._prompts as any[]).map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
 
       const changes: any[] = [];
-      for (const [text, p] of currentMap.entries()) {
-        const prevP = prevMap.get(text);
+      for (const [text, pEntry] of Array.from(currentMap.entries())) {
+        const p = pEntry as any;
+        const prevP = prevMap.get(text) as any;
         if (prevP) {
           const delta = (p.visibilityScore ?? 0) - (prevP.visibilityScore ?? 0);
           changes.push({

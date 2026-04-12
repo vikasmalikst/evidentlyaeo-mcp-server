@@ -1,6 +1,6 @@
 import { LRUCache } from 'lru-cache';
 
-const TTL_MS = 60_000;
+const TTL_MS = 30 * 60_000; // 30 minutes
 
 const cache = new LRUCache<string, unknown>({
   max: 200,

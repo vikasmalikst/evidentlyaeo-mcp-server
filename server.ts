@@ -26,21 +26,19 @@ import {
   getDomainAuditSchema
 } from './tools/domain-readiness.tool';
 import {
-  executeCitationsTopSources,    citationsTopSourcesSchema,
-  executeCitationsSourceDetail,  citationsSourceDetailSchema,
+  executeCitationsTopSources, citationsTopSourcesSchema,
+  executeCitationsSourceDetail, citationsSourceDetailSchema,
   executeCitationsCompetitorGap, citationsCompetitorGapSchema,
-  executeCitationsTrend,         citationsTrendSchema,
-  executeSourceAttribution,      getSourceAttributionSchema
+  executeCitationsTrend, citationsTrendSchema,
+  executeSourceAttribution, getSourceAttributionSchema
 } from './tools/citations.tool';
 import {
-  executeQueriesSummary,            queriesSummarySchema,
-  executeQueriesCompetitorOverlap,  queriesCompetitorOverlapSchema,
+  executeQueriesSummary, queriesSummarySchema,
+  executeQueriesCompetitorOverlap, queriesCompetitorOverlapSchema,
   executeQueriesCollectorBreakdown, queriesCollectorBreakdownSchema,
-  executeTopicsPerformance,         topicsPerformanceSchema,
-  // Deprecated alias — kept to avoid breaking existing Claude Desktop sessions.
-  // Remove once all sessions have cycled through a fresh initialize request.
-  executeQueryPerformance,          queryPerformanceSchema,
-  executeQueriesTrend,              queriesTrendSchema,
+  executeTopicsPerformance, topicsPerformanceSchema,
+
+  executeQueriesTrend, queriesTrendSchema,
 } from './tools/queries.tool';
 import {
   executeDashboardGetSummary, dashboardGetSummarySchema,
@@ -203,21 +201,7 @@ function registerTools(server: McpServer, sessionId: string) {
     }
   );
 
-  // --------------------------------------------------------------------------------
-  // DEPRECATED — query_performance
-  // Kept as alias during Claude Desktop config refresh window.
-  // Remove once all active sessions have cycled through a fresh initialize.
-  // --------------------------------------------------------------------------------
-  server.tool(
-    'query_performance',
-    '[DEPRECATED — use queries_summary instead] ' +
-    'Returns top-performing queries. This tool is a backward-compatible alias for ' +
-    'queries_summary and will be removed in the next release.',
-    queryPerformanceSchema.shape as any,
-    async (inputs: any) => {
-      return await executeToolWithMiddleware('query_performance', 'read:queries', inputs, executeQueryPerformance, sessionId);
-    }
-  );
+
 
   // ─────────────────────────────────────────────────────────────────
   // Citation Intelligence Tools (v2 — 4-tool tiered architecture)
@@ -416,7 +400,7 @@ async function executeToolWithMiddleware<T>(
     const result = await handler(inputs, ctx, dbToken);
     setCached(cacheKey, result);
     const responseText = JSON.stringify(result);
-    
+
     logAudit({
       ...auditBase,
       outcome: 'success',

@@ -27,10 +27,13 @@ import {
   getSourceAttributionSchema
 } from './tools/citations.tool';
 import {
-  executeQueryPerformance,
-  queryPerformanceSchema,
-  executeTopicsPerformance,
-  topicsPerformanceSchema
+  executeQueriesSummary,            queriesSummarySchema,
+  executeQueriesCompetitorOverlap,  queriesCompetitorOverlapSchema,
+  executeQueriesCollectorBreakdown, queriesCollectorBreakdownSchema,
+  executeTopicsPerformance,         topicsPerformanceSchema,
+  // Deprecated alias — kept to avoid breaking existing Claude Desktop sessions.
+  // Remove once all sessions have cycled through a fresh initialize request.
+  executeQueryPerformance,          queryPerformanceSchema,
 } from './tools/queries.tool';
 import {
   executeDashboardGetSummary, dashboardGetSummarySchema,
@@ -73,7 +76,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_list_competitors',
-    'Returns competitor comparison data: visibility %, share of voice %, sentiment, and mention counts for all tracked competitors. Call this only when the user asks about competitors or competitive gaps.',
+    'Returns competitor comparison data: visibility %, share of voice %, sentiment, and mention counts for all tracked competitors. Call this ONLY when the user asks about competitors or competitive gaps at the brand level. For query-level competitor gaps, use queries_competitor_overlap instead.',
     dashboardListCompetitorsSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_list_competitors', 'read:dashboard', inputs, executeDashboardListCompetitors, sessionId);
@@ -82,7 +85,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_llm_breakdown',
-    'Returns per-LLM performance breakdown: visibility, share of voice, and sentiment split by AI engine (ChatGPT, Perplexity, Gemini, etc.). Call this only when the user asks about specific AI engine performance.',
+    'Returns per-LLM performance breakdown: visibility, share of voice, and sentiment split by AI engine (ChatGPT, Perplexity, Gemini, etc.). Call this ONLY when the user asks about specific AI engine performance at the brand level. For per-engine data on a specific query, use queries_collector_breakdown instead.',
     dashboardLlmBreakdownSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_llm_breakdown', 'read:dashboard', inputs, executeDashboardLlmBreakdown, sessionId);
@@ -98,21 +101,99 @@ function registerTools(server: McpServer, sessionId: string) {
     }
   );
 
+  // --------------------------------------------------------------------------------
+  // Query Intelligence Tools (v2 — 3-tier architecture)
+  //
+  // Tier 1  queries_summary             — default entry point, always call first
+  // Tier 2  queries_competitor_overlap  — competitive gap drill-down
+  // Tier 3  queries_collector_breakdown — per-AI-engine single-query drill-down
+  // --------------------------------------------------------------------------------
+
   server.tool(
-    'query_performance',
-    'Returns performance data for top-performing queries, including visibility scores, mentions, and Share of Answer (SOA).',
-    queryPerformanceSchema.shape as any,
+    'queries_summary',
+    'Returns top-performing tracked queries for a brand with slim aggregated scores: ' +
+    'visibility % (0–100), Share of Answer / SOA (0–100), mention count, brand presence %, and query type. ' +
+    'Query types: ' +
+    '  "blind"      = Neutral queries — NO brand name in the question. ' +
+    '                 SYNONYMS: blind = neutral = unprompted = generic query. ' +
+    '                 Measures organic AI discoverability (is the brand mentioned when nobody asked about it?). ' +
+    '                 This is the most important visibility signal. ' +
+    '  "brand"      = Queries that explicitly name this brand. ' +
+    '  "competitor" = Queries that explicitly name a competitor brand. ' +
+    '  "all"        = All query types combined (default). ' +
+    'ALWAYS call this first for any question about query performance, top queries, ' +
+    'neutral/blind/unprompted visibility, SOA, or query-level metrics. ' +
+    'Do NOT call queries_collector_breakdown unless the user specifically asks ' +
+    'about a named AI engine (ChatGPT, Perplexity, etc.) AND a specific query. ' +
+    'Do NOT call queries_competitor_overlap unless the user asks about ' +
+    'competitive gaps or which queries competitors are winning.',
+    queriesSummarySchema.shape as any,
     async (inputs: any) => {
-      return await executeToolWithMiddleware('query_performance', 'read:queries', inputs, executeQueryPerformance, sessionId);
+      return await executeToolWithMiddleware('queries_summary', 'read:queries', inputs, executeQueriesSummary, sessionId);
+    }
+  );
+
+  server.tool(
+    'queries_competitor_overlap',
+    'Returns queries where tracked competitors also appear in AI responses, ' +
+    'with a side-by-side visibility comparison and a pre-computed visibilityGap. ' +
+    'visibilityGap = our visibility_score − competitor_visibility_score. ' +
+    '  Negative gap = competitor leads us on that query (we are losing). ' +
+    '  Positive gap = we lead the competitor on that query. ' +
+    'Results are sorted by largest competitive loss first (worst gaps at top). ' +
+    'CALL THIS when the user asks: which queries are competitors winning, ' +
+    'where are we losing AI visibility to competitors, what are our competitive ' +
+    'query gaps, or how we compare on blind/brand/competitor queries vs a named competitor. ' +
+    'Do NOT call this for brand-level competitor comparison — ' +
+    'use dashboard_list_competitors for that instead.',
+    queriesCompetitorOverlapSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('queries_competitor_overlap', 'read:queries', inputs, executeQueriesCompetitorOverlap, sessionId);
+    }
+  );
+
+  server.tool(
+    'queries_collector_breakdown',
+    'Returns per-AI-engine (collector) performance for ONE specific query. ' +
+    'Shows how the brand performs on ChatGPT vs Perplexity vs Gemini etc. ' +
+    'for that exact query, including visibility, SOA, mentions, and avg position. ' +
+    'ONLY call this when the user asks about a specific AI engine AND a specific query simultaneously. ' +
+    'Requires queryText — copy the exact value from a queries_summary result. ' +
+    'Set includeCompetitors: true ONLY when the user explicitly asks how a competitor ' +
+    'performs on a specific AI engine for a specific query. ' +
+    'Do NOT use this for brand-level per-engine data — use dashboard_llm_breakdown instead.',
+    queriesCollectorBreakdownSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('queries_collector_breakdown', 'read:queries', inputs, executeQueriesCollectorBreakdown, sessionId);
     }
   );
 
   server.tool(
     'topics_performance',
-    'Returns high-level performance data aggregated by topic, including visibility and sentiment across query groups.',
+    'Returns performance data aggregated by topic group (e.g., Awareness, Consideration, Decision), ' +
+    'including avg visibility score, SOA, sentiment, brand presence %, and prompt count per topic. ' +
+    'CALL THIS when the user asks about topic-level performance, how topics compare, ' +
+    'or which content categories drive the most AI visibility. ' +
+    'Do NOT call this for individual query-level data — use queries_summary for that.',
     topicsPerformanceSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('topics_performance', 'read:queries', inputs, executeTopicsPerformance, sessionId);
+    }
+  );
+
+  // --------------------------------------------------------------------------------
+  // DEPRECATED — query_performance
+  // Kept as alias during Claude Desktop config refresh window.
+  // Remove once all active sessions have cycled through a fresh initialize.
+  // --------------------------------------------------------------------------------
+  server.tool(
+    'query_performance',
+    '[DEPRECATED — use queries_summary instead] ' +
+    'Returns top-performing queries. This tool is a backward-compatible alias for ' +
+    'queries_summary and will be removed in the next release.',
+    queryPerformanceSchema.shape as any,
+    async (inputs: any) => {
+      return await executeToolWithMiddleware('query_performance', 'read:queries', inputs, executeQueryPerformance, sessionId);
     }
   );
 

@@ -30,7 +30,7 @@ import {
   executeCitationsSourceDetail, citationsSourceDetailSchema,
   executeCitationsCompetitorGap, citationsCompetitorGapSchema,
   executeCitationsTrend, citationsTrendSchema,
-  executeSourceAttribution, getSourceAttributionSchema
+
 } from './tools/citations.tool';
 import {
   executeQueriesSummary, queriesSummarySchema,
@@ -45,7 +45,7 @@ import {
   executeDashboardListCompetitors, dashboardListCompetitorsSchema,
   executeDashboardLlmBreakdown, dashboardLlmBreakdownSchema,
   executeDashboardGetActionItems, dashboardGetActionItemsSchema,
-  executeDashboardKPIs, dashboardKPIsSchema
+
 } from './tools/dashboard.tool';
 import { METRIC_DICTIONARY, DICTIONARY_URI, DICTIONARY_MIME } from './content/dictionary.content';
 import { PROMPTS } from './content/expert-persona.prompt';
@@ -267,20 +267,7 @@ function registerTools(server: McpServer, sessionId: string) {
     }
   );
 
-  server.tool(
-    'citations_source_attribution',
-    '[LEGACY — prefer citations_top_sources for most questions] ' +
-    'Returns raw source attribution data for a brand. ' +
-    'For the top citing domains: use citations_top_sources. ' +
-    'For a specific domain detail: use citations_source_detail. ' +
-    'For competitor citation gaps: use citations_competitor_gap. ' +
-    'For citation trends over time: use citations_trend. ' +
-    'Only call this tool if none of the above tools apply.',
-    getSourceAttributionSchema.shape as any,
-    async (inputs: any) => {
-      return await executeToolWithMiddleware('citations_source_attribution', 'read:citations', inputs, executeSourceAttribution, sessionId);
-    }
-  );
+
 
   server.tool(
     'recommendations_list',

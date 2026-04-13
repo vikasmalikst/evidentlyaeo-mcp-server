@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { promptsAnalyticsService } from '../../services/prompts-analytics.service';
+import { queryAggregationService } from '../../services/mcp-aggregations/query-aggregation.service';
 import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, collectorsSchema, fieldsSchema } from './schemas';
@@ -89,81 +89,6 @@ function r1(v: number | null | undefined): number | null {
   return Math.round(v * 10) / 10;
 }
 
-/**
- * Slim a raw prompt object down to only the fields needed by queries_summary.
- * Called immediately after extracting prompts so large raw objects are never
- * held in memory beyond this point.
- */
-function slimPrompt(p: any) {
-  return {
-    query_text: p.queryText ?? null,
-    query_type: p.queryType ?? null,
-    visibility_score: r1(p.visibilityScore) ?? null,
-    share_of_answer_score: r1(p.soaScore) ?? null,
-    brand_mentions: p.mentions ?? null,
-    brand_presence_pct: r1(p.brandPresencePercentage) ?? null,
-    topic_name: p._topicName ?? null,
-  };
-}
-
-/**
- * Deduplicate prompts by queryText, keeping the entry with the highest
- * visibilityScore. This prevents the same query appearing N times because it
- * spans multiple topics — the model should see each query once.
- */
-function deduplicateByQueryText(prompts: any[]): any[] {
-  const seen = new Map<string, any>();
-  for (const p of prompts) {
-    const key = (p.queryText ?? p.query_text ?? '').toLowerCase().trim();
-    if (!key) continue;
-    const existing = seen.get(key);
-    const score = p.visibilityScore ?? p.visibility_score ?? 0;
-    if (!existing || score > (existing.visibilityScore ?? existing.visibility_score ?? 0)) {
-      seen.set(key, p);
-    }
-  }
-  return Array.from(seen.values());
-}
-
-/**
- * Flatten all prompts from all topics, stamping each with _topicName so
- * downstream tools can surface which topic a query belongs to.
- */
-function extractAllPrompts(data: any): any[] {
-  return ((data as any).topics || []).flatMap((t: any) =>
-    (t.prompts || []).map((p: any) => ({ ...p, _topicName: t.name ?? null }))
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared Cache Fetch
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Single shared fetch function used by all three query tools.
- * Cache key is built from (customerId, brandId, dateRange, collectors) so
- * different parameter sets get independent cache entries.
- * ALL three tools use the prefix 'prompts_shared' — meaning a queries_summary
- * call and a subsequent queries_competitor_overlap call with the same params
- * share one cache entry and one DB round-trip.
- */
-async function fetchPromptAnalytics(inputs: any, customerId: string) {
-  const { brandId, startDate, endDate, collectors } = inputs;
-  const cacheKey = buildCacheKey('prompts_shared', customerId, brandId, { startDate, endDate, collectors });
-  const cached = getCached(cacheKey);
-  if (cached) return { data: cached, cacheHit: true };
-
-  try {
-    const result = await promptsAnalyticsService.getPromptAnalytics({
-      brandId, customerId, startDate, endDate, collectors,
-    });
-    setCached(cacheKey, result);
-    return { data: result, cacheHit: false };
-  } catch (error: any) {
-    throw new McpSystemError('Failed to fetch prompt analytics', error.message);
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Zod Schemas
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,23 +164,30 @@ export const queryPerformanceSchema = queriesSummarySchema;
 
 
 export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, limit = 20, queryType = 'all', fields } = inputs;
+  const { brandId, startDate, endDate, limit = 20, queryType = 'all', fields, collectors } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
-  const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
+  const summaries = await queryAggregationService.getQueriesSummary({
+    brandId,
+    customerId: ctx.customerId,
+    startDate,
+    endDate,
+    collectors,
+    queryType,
+    limit
+  });
 
-  // Extract → slim immediately → deduplicate → filter → sort → slice
-  let prompts = extractAllPrompts(data);
-  let slimmed = prompts.map(slimPrompt);
-  slimmed = deduplicateByQueryText(slimmed);
+  const slimmed = summaries.map(s => ({
+    query_text: s.query_text,
+    query_type: s.query_type,
+    visibility_score: r1(s.visibility_score),
+    share_of_answer_score: r1(s.share_of_answer_score),
+    brand_mentions: s.mentions,
+    brand_presence_pct: r1(s.brand_presence_pct),
+    topic_name: s.topic,
+  }));
 
-  if (queryType !== 'all') {
-    slimmed = slimmed.filter((p: any) => p.query_type === queryType);
-  }
-
-  const sorted = slimmed
-    .sort((a: any, b: any) => (b.visibility_score ?? 0) - (a.visibility_score ?? 0))
-    .slice(0, limit);
+  const sorted = slimmed; // Service already performs sort and limit
 
   const queryTypeLabel = queryType === 'blind'
     ? 'blind (neutral/unprompted) queries'
@@ -266,7 +198,6 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     _meta: {
       brand_id: brandId,
       query_type_filter: queryType,
-      cache_hit: cacheHit,
     },
   } : {
     queries: sorted,
@@ -283,7 +214,6 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
         brand_presence_pct: '0–100. % of AI engines that mentioned the brand for this query.',
         null_values: 'null means no data was collected for this metric in the selected period. Do NOT report null as 0 or as a score.',
       },
-      cache_hit: cacheHit,
     },
   };
 
@@ -296,49 +226,24 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
   const { brandId, startDate, endDate, limit = 20, queryType = 'all', competitorName, fields } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
-  const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
+  const overlapRows = await queryAggregationService.getCompetitorOverlap({
+    brandId,
+    customerId: ctx.customerId,
+    startDate,
+    endDate,
+    collectors,
+    queryType,
+    competitorName,
+    limit
+  });
 
-  let prompts = extractAllPrompts(data);
-  prompts = deduplicateByQueryText(prompts);
-
-  if (queryType !== 'all') {
-    prompts = prompts.filter((p: any) => p.queryType === queryType);
-  }
-
-  // Build per-query competitor overlap rows
-  const rows: any[] = [];
-  for (const p of prompts) {
-    const compVisMap: Record<string, number> = p.competitorVisibilityMap ?? {};
-    const compMentMap: Record<string, number> = p.competitorMentionsMap ?? {};
-    const compSoaMap: Record<string, number> = p.competitorSoaMap ?? {};
-
-    const competitors = Object.keys(compVisMap).filter(c =>
-      competitorName ? c.toLowerCase() === competitorName.toLowerCase() : true
-    );
-    if (competitors.length === 0) continue;
-
-    for (const comp of competitors) {
-      const ourScore = r1(p.visibilityScore) ?? null;
-      const theirScore = r1(compVisMap[comp]) ?? null;
-      const gap = (ourScore != null && theirScore != null) ? r1(ourScore - theirScore) : null;
-
-      rows.push({
-        query_text: p.queryText ?? null,
-        query_type: p.queryType ?? null,
-        topic_name: p._topicName ?? null,
-        our_visibility_score: ourScore,
-        competitor_name: comp,
-        competitor_visibility_score: theirScore,
-        visibility_gap: gap,
-        competitor_mentions: compMentMap[comp] ?? null,
-        competitor_soa_score: r1(compSoaMap[comp]) ?? null,
-      });
-    }
-  }
-
-  // Sort: most negative gap (worst competitive loss) first
-  rows.sort((a, b) => (a.visibility_gap ?? 0) - (b.visibility_gap ?? 0));
-  const sliced = rows.slice(0, limit);
+  const sliced = overlapRows.map(r => ({
+    ...r,
+    our_visibility_score: r1(r.our_visibility_score),
+    competitor_visibility_score: r1(r.competitor_visibility_score),
+    visibility_gap: r1(r.visibility_gap),
+    competitor_soa_score: r1(r.competitor_soa_score),
+  }));
 
   const result = sliced.length === 0 ? {
     competitor_overlap: annotateEmptyArray(
@@ -358,7 +263,6 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
         visibility_gap: 'our_visibility_score − competitor_visibility_score. Negative = competitor leads us on this query. Positive = we lead. Results sorted by worst gap first.',
         null_values: 'null means no data for that metric. Do NOT report null as 0.',
       },
-      cache_hit: cacheHit,
     },
   };
 
@@ -384,17 +288,9 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
  */
 export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, queryText, includeCompetitors = false } = inputs;
-  await validateBrandOwnership(brandId, ctx.customerId, dbToken);
+  const detail = await queryAggregationService.getQueryDetail(brandId, ctx.customerId, queryText);
 
-  const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
-
-  const allPrompts = extractAllPrompts(data);
-  const needle = queryText.toLowerCase().trim();
-  const match = allPrompts.find((p: any) =>
-    (p.queryText ?? '').toLowerCase().trim() === needle
-  );
-
-  if (!match) {
+  if (!detail) {
     return {
       content: [{
         type: 'text' as const,
@@ -404,26 +300,23 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
             brand_id: brandId,
             query_text: queryText,
             found: false,
-            message: `No data found for query "${queryText}" in this date range. ` +
-              `Use queries_summary to see available query texts.`,
-            cache_hit: cacheHit,
+            message: `No data found for query "${queryText}". Use queries_summary to see available options.`,
           },
         }),
       }],
     };
   }
 
-  const responses: any[] = match.responses ?? [];
-  const breakdown = responses.map((r: any) => {
+  const breakdown = detail.per_collector.map((c: any) => {
     const row: any = {
-      collector: r.collectorType ?? null,
-      brand_mentions: r.mentions ?? null,
-      avg_position: r1(r.averagePosition) ?? null,
-      soa_score: r1(r.soaScore) ?? null,
+      collector: c.collector_type,
+      brand_mentions: c.brand_mentions,
+      avg_position: r1(c.brand_positions && c.brand_positions.length > 0 ? c.brand_positions[0] : null),
+      soa_score: r1(c.soa_score),
     };
-    if (includeCompetitors && r.competitorVisibilityMap) {
+    if (includeCompetitors && c.competitor_visibility) {
       row.competitor_visibility = Object.fromEntries(
-        Object.entries(r.competitorVisibilityMap as Record<string, number>)
+        Object.entries(c.competitor_visibility as Record<string, number>)
           .map(([k, v]) => [k, r1(v)])
       );
     }
@@ -431,26 +324,21 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
   });
 
   const result = {
-    query_text: match.queryText,
-    query_type: match.queryType ?? null,
-    query_type_note: match.queryType === 'blind'
-      ? 'blind = neutral/unprompted — no brand name in query. Measures organic AI discoverability.'
-      : null,
-    overall_visibility: r1(match.visibilityScore) ?? null,
-    overall_soa: r1(match.soaScore) ?? null,
+    query_text: detail.query_text,
+    topic_name: detail.topic,
+    overall_visibility: r1(detail.overall.visibility_score),
+    overall_soa: r1(detail.overall.soa_score),
     collector_breakdown: breakdown,
+    latest_answer_sample: detail.latest_answer ? {
+      text: detail.latest_answer.text.substring(0, 500) + (detail.latest_answer.text.length > 500 ? '...' : ''),
+      engine: detail.latest_answer.collector
+    } : null,
     _meta: {
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       collectors_returned: breakdown.length,
       competitors_included: includeCompetitors,
-      data_source: 'EvidentlyAEO prompt analytics — real collector data only.',
-      field_guide: {
-        soa_score: '0–100. Brand share of the answer on this collector for this query.',
-        avg_position: 'Lower = brand appears earlier in the AI response. null = brand not mentioned.',
-        null_values: 'null = no data. Do NOT report null as 0.',
-      },
-      cache_hit: cacheHit,
+      data_source: 'EvidentlyAEO prompt analytics — optimized drill-down layer.',
     },
   };
 
@@ -465,22 +353,27 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
   const { brandId, startDate, endDate, fields } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
-  const { data, cacheHit } = await fetchPromptAnalytics(inputs, ctx.customerId);
+  const topicSummaries = await queryAggregationService.getTopicsSummary({
+    brandId,
+    customerId: ctx.customerId,
+    startDate,
+    endDate,
+    collectors
+  });
 
-  const topics = ((data as any).topics || []).map((t: any) => ({
-    topic_name: t.name ?? null,
-    prompt_count: t.promptCount ?? null,
-    volume_count: t.volumeCount ?? null,
-    visibility_score_0_to_100: r1(t.visibilityScore) ?? null,
-    sentiment_score_0_to_100: r1(t.sentimentScore) ?? null,
-    total_mentions: t.mentions ?? null,
-    share_of_answer_score: r1(t.soaScore) ?? null,
-    brand_presence_pct: r1(t.brandPresencePercentage) ?? null,
+  const topics = topicSummaries.map(t => ({
+    topic_name: t.topic,
+    prompt_count: t.query_count,
+    visibility_score_0_to_100: r1(t.visibility_score),
+    sentiment_score_0_to_100: r1(t.sentiment_score),
+    total_mentions: t.mentions,
+    share_of_answer_score: r1(t.share_of_answer_score),
+    brand_presence_pct: r1((t.mentions > 0 ? 100 : 0)) // Simplified presence for topics summary
   }));
 
   const result = topics.length === 0 ? {
     topics: annotateEmptyArray('topics', `brand ${brandId} in this date range`),
-    _meta: { brand_id: brandId, cache_hit: cacheHit },
+    _meta: { brand_id: brandId },
   } : {
     topics,
     total_topics: topics.length,
@@ -488,7 +381,6 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       data_source: 'EvidentlyAEO topic analytics — real tracked data only',
-      cache_hit: cacheHit,
     },
   };
 
@@ -535,24 +427,28 @@ export async function executeQueriesTrend(inputs: any, ctx: any, dbToken: string
       const endIso = end.toISOString();
       const label = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${end.toLocaleDateString('en-US', { day: 'numeric' })}`;
 
-      // Reuse the shared fetch function (uses 'prompts_shared' cache prefix)
-      const { data } = await fetchPromptAnalytics({ brandId, startDate: startIso, endDate: endIso, collectors }, ctx.customerId);
+      // Use the optimized aggregation service instead of heavy legacy service
+      const summaries = await queryAggregationService.getQueriesSummary({
+        brandId,
+        customerId: ctx.customerId,
+        startDate: startIso,
+        endDate: endIso,
+        collectors,
+        limit: 100 // Fetch a larger sample for trend calculation
+      });
 
-      const allPrompts = extractAllPrompts(data);
-      const deduplicated = deduplicateByQueryText(allPrompts);
-
-      const avgVisibility = deduplicated.length > 0
-        ? (deduplicated as any[]).reduce((sum: number, p: any) => sum + (p.visibilityScore ?? 0), 0) / deduplicated.length
+      const avgVisibility = summaries.length > 0
+        ? summaries.reduce((sum, s) => sum + s.visibility_score, 0) / summaries.length
         : 0;
 
-      const totalMentions = (deduplicated as any[]).reduce((sum: number, p: any) => sum + (p.mentions ?? 0), 0);
+      const totalMentions = summaries.reduce((sum, s) => sum + s.mentions, 0);
 
       periodResults.push({
         period_label: label,
         avg_visibility_score: r1(avgVisibility),
         total_mentions: totalMentions,
-        unique_query_count: deduplicated.length,
-        _prompts: deduplicated // Temporary for movers calculation
+        unique_query_count: summaries.length,
+        _prompts: summaries // Temporary for movers calculation
       });
     }
 
@@ -585,19 +481,19 @@ export async function executeQueriesTrend(inputs: any, ctx: any, dbToken: string
       const current = periodResults[0];
       const previous = periodResults[1];
 
-      const currentMap = new Map<string, any>((current._prompts as any[]).map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
-      const prevMap = new Map<string, any>((previous._prompts as any[]).map((p: any) => [(p.queryText || '').toLowerCase().trim(), p]));
+      const currentMap = new Map<string, any>((current._prompts as any[]).map((p: any) => [(p.query_text || '').toLowerCase().trim(), p]));
+      const prevMap = new Map<string, any>((previous._prompts as any[]).map((p: any) => [(p.query_text || '').toLowerCase().trim(), p]));
 
       const changes: any[] = [];
       for (const [text, pEntry] of Array.from(currentMap.entries())) {
         const p = pEntry as any;
         const prevP = prevMap.get(text) as any;
         if (prevP) {
-          const delta = (p.visibilityScore ?? 0) - (prevP.visibilityScore ?? 0);
+          const delta = (p.visibility_score ?? 0) - (prevP.visibility_score ?? 0);
           changes.push({
-            query_text: p.queryText,
-            visibility_current: r1(p.visibilityScore),
-            visibility_previous: r1(prevP.visibilityScore),
+            query_text: p.query_text,
+            visibility_current: r1(p.visibility_score),
+            visibility_previous: r1(prevP.visibility_score),
             delta: r1(delta)
           });
         }

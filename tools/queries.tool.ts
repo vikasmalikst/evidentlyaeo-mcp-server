@@ -182,6 +182,8 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     query_type: s.query_type,
     visibility_score: r1(s.visibility_score),
     share_of_answer_score: r1(s.share_of_answer_score),
+    brand_sentiment_score: r1(s.sentiment_score),
+    brand_sentiment_label: s.sentiment_label,
     brand_mentions: s.mentions,
     brand_presence_pct: r1(s.brand_presence_pct),
     topic_name: s.topic,
@@ -211,6 +213,8 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
       field_guide: {
         visibility_score: '0–100. Higher = brand appears more often in AI answers for this query.',
         share_of_answer_score: '0–100. Higher = brand occupies more of the answer content.',
+        brand_sentiment_score: '0–100. Average sentiment of brand mentions for this query.',
+        brand_sentiment_label: 'positive | neutral | negative based on score.',
         brand_presence_pct: '0–100. % of AI engines that mentioned the brand for this query.',
         null_values: 'null means no data was collected for this metric in the selected period. Do NOT report null as 0 or as a score.',
       },
@@ -313,11 +317,18 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
       brand_mentions: c.brand_mentions,
       avg_position: r1(c.brand_positions && c.brand_positions.length > 0 ? c.brand_positions[0] : null),
       soa_score: r1(c.soa_score),
+      sentiment_score: r1(c.sentiment_score),
+      sentiment_label: c.sentiment_label,
     };
-    if (includeCompetitors && c.competitor_visibility) {
-      row.competitor_visibility = Object.fromEntries(
-        Object.entries(c.competitor_visibility as Record<string, number>)
-          .map(([k, v]) => [k, r1(v)])
+    if (includeCompetitors && c.competitor_details) {
+      row.competitor_details = Object.fromEntries(
+        Object.entries(c.competitor_details as Record<string, any>)
+          .map(([k, v]) => [k, {
+            ...v,
+            visibility_score: r1(v.visibility_score),
+            soa_score: r1(v.soa_score),
+            sentiment_score: r1(v.sentiment_score),
+          }])
       );
     }
     return row;

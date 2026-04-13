@@ -44,7 +44,21 @@ export async function executeCitationsTopSources(inputs: any, ctx: any, dbToken:
   });
 
   const result = {
-    sources: sources.length > 0 ? sources : annotateEmptyArray('citation sources', `brand ${brandId}`),
+    sources: sources.map(s => ({
+      domain: s.domain,
+      citation_count: s.citation_count,
+      mention_rate_pct: s.mention_rate_pct,
+      sentiment_score: r1(s.avg_sentiment),
+      sentiment_label: s.sentiment_label,
+      source_type: s.source_type,
+    })).length > 0 ? sources.map(s => ({
+      domain: s.domain,
+      citation_count: s.citation_count,
+      mention_rate_pct: s.mention_rate_pct,
+      sentiment_score: r1(s.avg_sentiment),
+      sentiment_label: s.sentiment_label,
+      source_type: s.source_type,
+    })) : annotateEmptyArray('citation sources', `brand ${brandId}`),
     _meta: {
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
@@ -54,6 +68,8 @@ export async function executeCitationsTopSources(inputs: any, ctx: any, dbToken:
         citation_count: 'Total times this domain was cited in AI responses for this brand.',
         mention_rate_pct: '% share of total citations this domain represents.',
         unique_query_count: 'How many distinct tracked queries cited this domain.',
+        sentiment_score: '0–100. Average sentiment of brand mentions in responses citing this domain.',
+        sentiment_label: 'positive | neutral | negative based on score.',
         null_values: 'null means no data was collected. Do NOT report null as 0.',
       }
     }

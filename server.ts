@@ -81,7 +81,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_list_competitors',
-    'Returns competitor comparison data: visibility %, share of voice %, sentiment, and mention counts for all tracked competitors. Call this ONLY when the user asks about competitors or competitive gaps at the brand level. For query-level competitor gaps, use queries_competitor_overlap instead.',
+    'Returns competitor comparison data: visibility %, share of answer %, sentiment, and mention counts for all tracked competitors. Call this ONLY when the user asks about competitors or competitive gaps at the brand level. For query-level competitor gaps, use queries_competitor_overlap instead.',
     dashboardListCompetitorsSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_list_competitors', 'read:dashboard', inputs, executeDashboardListCompetitors, sessionId);
@@ -90,7 +90,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_llm_breakdown',
-    'Returns per-LLM performance breakdown: visibility, share of voice, and sentiment split by AI engine (ChatGPT, Perplexity, Gemini, etc.). Call this ONLY when the user asks about specific AI engine performance at the brand level. For per-engine data on a specific query, use queries_collector_breakdown instead.',
+    'Returns per-LLM performance breakdown: visibility, share of answer, and sentiment split by AI engine (ChatGPT, Perplexity, Gemini, etc.). Call this ONLY when the user asks about specific AI engine performance at the brand level. For per-engine data on a specific query, use queries_collector_breakdown instead.',
     dashboardLlmBreakdownSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_llm_breakdown', 'read:dashboard', inputs, executeDashboardLlmBreakdown, sessionId);
@@ -175,7 +175,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'topics_performance',
-    'Returns performance data aggregated by topic group (e.g., Awareness, Consideration, Decision), ' +
+    'Returns performance data aggregated by topic group ' +
     'including avg visibility score, SOA, sentiment, brand presence %, and prompt count per topic. ' +
     'CALL THIS when the user asks about topic-level performance, how topics compare, ' +
     'or which content categories drive the most AI visibility. ' +

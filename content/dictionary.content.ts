@@ -11,12 +11,12 @@ export const METRIC_DICTIONARY = `
 EvidentlyAEO Metric Definitions
 ================================
 
-SEARCH VISIBILITY (%)
+ VISIBILITY SCORE (%)
   What it is: The percentage of tracked AI queries where this brand appeared in at least one AI-generated response.
   Scale: 0–100%. Higher is better.
   What NULL means: No responses were collected in this period. Do not treat as 0%.
 
-SHARE OF VOICE / SHARE OF ANSWER (SOA) (%)
+ SHARE OF ANSWER (SOA) (%)
   What it is: Of all AI responses that mentioned ANY brand in this category, what percentage mentioned THIS brand.
   This is different from Search Visibility. SOA measures competitive share, not raw presence.
   Scale: 0–100%. A brand with 40% SOA is mentioned in 40% of all brand-mentioning responses.

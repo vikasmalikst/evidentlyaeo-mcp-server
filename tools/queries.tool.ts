@@ -223,7 +223,7 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
 
 
 export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, limit = 20, queryType = 'all', competitorName, fields } = inputs;
+  const { brandId, startDate, endDate, limit = 20, queryType = 'all', competitorName, fields, collectors } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   const overlapRows = await queryAggregationService.getCompetitorOverlap({
@@ -250,7 +250,7 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
       'competitor overlap queries',
       `brand ${brandId}${competitorName ? ` vs ${competitorName}` : ''} in this date range`
     ),
-    _meta: { brand_id: brandId, cache_hit: cacheHit },
+    _meta: { brand_id: brandId },
   } : {
     competitor_overlap: sliced,
     total_returned: sliced.length,
@@ -350,7 +350,7 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, fields } = inputs;
+  const { brandId, startDate, endDate, fields, collectors } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   const topicSummaries = await queryAggregationService.getTopicsSummary({

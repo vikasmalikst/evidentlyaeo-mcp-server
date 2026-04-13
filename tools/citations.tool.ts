@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { sourceAttributionService } from '../../services/source-attribution.service';
+import { citationAggregationService } from '../../services/mcp-aggregations/citation-aggregation.service';
 import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpSystemError } from '../utils/response-formatter';
 import { brandIdSchema, dateRangeSchema, collectorsSchema, fieldsSchema } from './schemas';
@@ -30,58 +31,29 @@ export const citationsTopSourcesSchema = z.object({
 });
 
 export async function executeCitationsTopSources(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, collectors, queryTags, topN = 10, fields } = inputs;
+  const { brandId, startDate, endDate, collectors, topN = 10, fields } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
-  const cacheKey = buildCacheKey('citations_shared', ctx.customerId, brandId, { startDate, endDate, collectors, queryTags });
-  const cached = getCached(cacheKey);
-  
-  let raw;
-  let cacheHit = false;
-  
-  if (cached) {
-    raw = cached;
-    cacheHit = true;
-  } else {
-    try {
-      raw = await sourceAttributionService.getSourceAttribution(
-        brandId,
-        ctx.customerId,
-        { start: startDate, end: endDate },
-        undefined,
-        collectors,
-        queryTags
-      );
-      setCached(cacheKey, raw);
-    } catch (error: any) {
-      throw new McpSystemError('Failed to fetch source attribution', error.message);
-    }
-  }
-
-  const sources = (raw.sources || [])
-    .map((s: any) => ({
-      domain: s.name,
-      mention_count: s.citations,
-      mention_rate_pct: r1(s.mentionRate),
-      sentiment_score: r1(s.sentiment),
-      source_type: s.type || null,
-    }))
-    .sort((a: any, b: any) => b.mention_count - a.mention_count)
-    .slice(0, topN);
+  const sources = await citationAggregationService.getTopCitedSources({
+    brandId,
+    customerId: ctx.customerId,
+    startDate,
+    endDate,
+    collectors,
+    limit: topN,
+  });
 
   const result = {
     sources: sources.length > 0 ? sources : annotateEmptyArray('citation sources', `brand ${brandId}`),
     _meta: {
       brand_id: brandId,
-      date_range: raw.dateRange,
-      data_source: 'EvidentlyAEO source attribution',
-      total_sources_available: raw.totalSources,
+      date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       sources_returned: sources.length,
-      cache_hit: cacheHit,
+      data_source: 'EvidentlyAEO citations — aggregated from citations table.',
       field_guide: {
-        mention_count: 'Number of AI responses that cited this domain for this brand.',
-        mention_rate_pct: '0–100. % of all AI responses that included this domain as a citation.',
-        sentiment_score: '0–100. Average sentiment of responses citing this domain. null = no data.',
+        citation_count: 'Total times this domain was cited in AI responses for this brand.',
+        mention_rate_pct: '% share of total citations this domain represents.',
+        unique_query_count: 'How many distinct tracked queries cited this domain.',
         null_values: 'null means no data was collected. Do NOT report null as 0.',
       }
     }
@@ -208,78 +180,24 @@ export async function executeCitationsTrend(inputs: any, ctx: any, dbToken: stri
   const { brandId, collectors, granularity = 'week', periods = 4 } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
-  const daysPerPeriod = granularity === 'month' ? 30 : 7;
-  const now = new Date();
-  const periodResults = [];
-
   try {
-    for (let i = 0; i < periods; i++) {
-      const end = new Date(now.getTime() - i * daysPerPeriod * 24 * 60 * 60 * 1000);
-      const start = new Date(now.getTime() - (i + 1) * daysPerPeriod * 24 * 60 * 60 * 1000);
-      
-      const startIso = start.toISOString();
-      const endIso = end.toISOString();
-      const label = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${end.toLocaleDateString('en-US', { day: 'numeric' })}`;
-
-      const cacheKey = buildCacheKey('citations_trend', ctx.customerId, brandId, { start: startIso, end: endIso, collectors });
-      const cached = getCached(cacheKey);
-      
-      let raw;
-      if (cached) {
-        raw = cached;
-      } else {
-        raw = await sourceAttributionService.getSourceAttribution(
-          brandId,
-          ctx.customerId,
-          { start: startIso, end: endIso },
-          undefined,
-          collectors
-        );
-        setCached(cacheKey, raw);
-      }
-
-      periodResults.push({
-        period_label: label,
-        total_unique_sources: raw.totalSources,
-        mention_rate_pct: r1(raw.overallMentionRate),
-        avg_sentiment: r1(raw.avgSentiment),
-      });
-    }
-
-    // Compute deltas (current vs previous)
-    const finalPeriods = periodResults.map((p, idx) => {
-      const nextIdx = idx + 1;
-      const prevPeriod = periodResults[nextIdx];
-      let delta_mention_rate = null;
-      let delta_sentiment = null;
-
-      if (prevPeriod) {
-        // Delta % = ((current - previous) / previous) * 100
-        if (prevPeriod.mention_rate_pct !== 0 && prevPeriod.mention_rate_pct != null) {
-          delta_mention_rate = r1(((p.mention_rate_pct! - prevPeriod.mention_rate_pct!) / prevPeriod.mention_rate_pct!) * 100);
-        }
-        if (prevPeriod.avg_sentiment !== 0 && prevPeriod.avg_sentiment != null) {
-          delta_sentiment = r1(((p.avg_sentiment! - prevPeriod.avg_sentiment!) / prevPeriod.avg_sentiment!) * 100);
-        }
-      }
-
-      return {
-        ...p,
-        delta_mention_rate,
-        delta_sentiment
-      };
+    const trendPeriods = await citationAggregationService.getCitationTrend({
+      brandId,
+      customerId: ctx.customerId,
+      granularity,
+      periods,
+      collectors,
     });
 
     return {
-      periods: finalPeriods,
+      periods: trendPeriods,
       _meta: {
         brand_id: brandId,
         granularity,
         field_guide: {
-          delta_mention_rate: 'Change in mention_rate_pct vs the previous period. Positive = improving. Negative = declining. null = no previous period to compare.',
-          null_values: 'null means no data or no prior period. Do NOT report null as 0 or as flat.',
+          delta_citations: 'Change in citation count vs prior period (%). Positive = growing. Negative = declining. null = no prior period.',
+          null_values: 'null means no data or no prior period. Do NOT report null as flat.',
         },
-        cache_hit: false
       }
     };
   } catch (error: any) {

@@ -66,7 +66,6 @@ export function logAudit(entry: AuditLogEntry): void {
       duration_ms: entry.durationMs,
       cache_hit: entry.cacheHit || false,
       response_bytes: entry.responseBytes ?? null,
-      estimated_tokens: entry.estimatedTokens ?? null,
     })
     .then(({ error }) => {
       if (error) {

@@ -451,20 +451,22 @@ const serverCache = {
 };
 
 const router = Router();
-const getRequestTimestamps = new Map<string, number>();
+const getRequestTimestamps = new Map<string, number[]>();
 
 // Required: Inspector and clients probe the endpoint with GET first
 router.get('/', (req, res) => {
   const clientIp = req.ip || 'unknown';
   const now = Date.now();
-  const last = getRequestTimestamps.get(clientIp) || 0;
+  const timestamps = getRequestTimestamps.get(clientIp) || [];
 
-  // Allow at most 1 GET per 10 seconds per IP.
-  if (now - last < 10_000) {
+  // Allow at most 100 GETs per 10 seconds per IP (polling-friendly).
+  const recentTimestamps = timestamps.filter(t => now - t < 10_000);
+  if (recentTimestamps.length >= 100) {
     return res.status(429).json({ error: 'Too many health checks. Slow down.' });
   }
 
-  getRequestTimestamps.set(clientIp, now);
+  recentTimestamps.push(now);
+  getRequestTimestamps.set(clientIp, recentTimestamps);
 
   res.set({
     'Cache-Control': 'public, max-age=30',

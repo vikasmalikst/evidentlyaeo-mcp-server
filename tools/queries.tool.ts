@@ -6,82 +6,6 @@ import { brandIdSchema, dateRangeSchema, collectorsSchema, fieldsSchema } from '
 import { annotateEmptyArray, projectFields } from '../utils/data-sanitizer';
 import { getCached, setCached, buildCacheKey } from '../cache/tool-cache';
 
-/**
- * queries.tool.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * EvidentlyAEO MCP — Query Intelligence Tools (v2)
- *
- * CONTEXT & DESIGN RATIONALE
- * ─────────────────────────────────────────────────────────────────────────────
- * The previous single `query_performance` tool had three production issues:
- *
- *  1. Terminology hallucination — tool descriptions contained no semantic
- *     vocabulary. The model had no way to know that "blind queries" and
- *     "neutral queries" are the same thing, or what SOA, visibilityScore,
- *     or queryType values mean in AEO domain context.
- *
- *  2. Data hallucination — raw prompt objects were passed to the model without
- *     field projection or null semantics. The model was forced to invent meaning
- *     for ambiguous field names (e.g. soaScore, brandPresencePercentage).
- *     Silent .flatMap fallbacks returned empty arrays indistinguishably from
- *     "no data exists" vs "fetch failed".
- *
- *  3. Over-output + token waste — a single tool always returned full prompt
- *     objects (avg 2.77 MB), causing MCP session timeouts (~4 min disconnect
- *     loops in Claude Desktop). No field projection. Pretty-printed JSON.
- *
- * This file replaces `query_performance` with a 3-tool tiered architecture:
- *
- *  Tier 1 — queries_summary           (DEFAULT — call this first)
- *    Returns 7 slim fields per query row. Max ~15 KB at limit=50.
- *    Covers 90%+ of user questions about query performance.
- *    Deduplicates by queryText across topics. Aggregated across all collectors.
- *
- *  Tier 2 — queries_competitor_overlap  (call only for competitive gap questions)
- *    Returns queries where competitors also appear, with a pre-computed
- *    visibilityGap (our score − competitor score). Sorted worst-gap first.
- *    Uses competitorVisibilityMap / competitorMentionsMap already on each prompt.
- *
- *  Tier 3 — queries_collector_breakdown  (call only for per-engine questions)
- *    Returns per-AI-engine data for ONE specific query (ChatGPT vs Perplexity
- *    vs Gemini etc). Requires explicit queryText input. includeCompetitors is
- *    opt-in — defaults false to keep payload minimal.
- *
- * SHARED CACHE
- *    All three tools call fetchPromptAnalytics() with the same cache key
- *    prefix ('prompts_shared'). First call pays DB cost; all follow-up
- *    drill-downs within the 60s TTL are in-memory cache hits. No redundant
- *    DB queries regardless of how many tools Claude chains in one turn.
- *
- * PAYLOAD SIZE GUARANTEE
- *    queries_summary:             ≤ 15 KB  (limit=50 × ~300 bytes/row)
- *    queries_competitor_overlap:  ≤ 25 KB  (limit=30 × ~800 bytes/row)
- *    queries_collector_breakdown: ≤  5 KB  (single query × N collectors)
- *    topics_performance:          ≤  8 KB  (≤100 topics × ~80 bytes/row)
- *
- * DATA SOURCES  (confirmed in prompts-analytics.service.ts)
- *    Prompt-level aggregated fields used here:
- *      queryText                  — the tracked query string
- *      queryType                  — 'blind' | 'brand' | 'competitor'
- *      visibilityScore            — 0–100, brand visibility on this query
- *      soaScore                   — 0–100, Share of Answer on this query
- *      mentions                   — brand mention count across all collectors
- *      brandPresencePercentage    — % of collectors where brand was mentioned
- *      competitorVisibilityMap    — Record<competitorName, visibilityScore>
- *      competitorMentionsMap      — Record<competitorName, mentionCount>
- *      competitorSoaMap           — Record<competitorName, soaScore>
- *    Per-collector data (responses[] on each prompt):
- *      collectorType              — 'chatgpt' | 'perplexity' | 'gemini' | etc.
- *      mentions                   — brand mention count on this collector
- *      averagePosition            — brand avg position on this collector
- *      soaScore                   — brand SOA on this collector
- *      competitorVisibilityMap    — per-collector competitor visibility
- * ─────────────────────────────────────────────────────────────────────────────
- */
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Internal Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 /** Round to 1 decimal place. Returns null if value is null/undefined. */
 function r1(v: number | null | undefined): number | null {
@@ -200,6 +124,9 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     _meta: {
       brand_id: brandId,
       query_type_filter: queryType,
+      query_type_note: 'blind = neutral = unprompted (no brand name in query). brand = explicit brand mention. competitor = explicit competitor mention.',
+      date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      empty_reason: `No ${queryTypeLabel} found for this brand in the selected date range. This means no data was collected — not that performance was zero.`,
     },
   } : {
     queries: sorted,
@@ -341,8 +268,10 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
     overall_soa: r1(detail.overall.soa_score),
     collector_breakdown: breakdown,
     latest_answer_sample: detail.latest_answer ? {
-      text: detail.latest_answer.text.substring(0, 500) + (detail.latest_answer.text.length > 500 ? '...' : ''),
-      engine: detail.latest_answer.collector
+      engine: detail.latest_answer.collector,
+      brand_mentioned: detail.latest_answer.text.toLowerCase().includes(brandId.toLowerCase()),
+      char_count: detail.latest_answer.text.length,
+      note: 'Raw answer text omitted. This is one sample AI response, not a metric.',
     } : null,
     _meta: {
       brand_id: brandId,
@@ -379,12 +308,16 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
     sentiment_score_0_to_100: r1(t.sentiment_score),
     total_mentions: t.mentions,
     share_of_answer_score: r1(t.share_of_answer_score),
-    brand_presence_pct: r1((t.mentions > 0 ? 100 : 0)) // Simplified presence for topics summary
+    brand_presence_pct: r1(t.brand_presence_pct)
   }));
 
   const result = topics.length === 0 ? {
     topics: annotateEmptyArray('topics', `brand ${brandId} in this date range`),
-    _meta: { brand_id: brandId },
+    _meta: {
+      brand_id: brandId,
+      date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      empty_reason: 'No topics found for this brand in the selected date range.',
+    },
   } : {
     topics,
     total_topics: topics.length,
@@ -392,6 +325,14 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       data_source: 'EvidentlyAEO topic analytics — real tracked data only',
+      field_guide: {
+        visibility_score_0_to_100: '0–100. % of prompts in this topic where brand appeared in AI responses.',
+        share_of_answer_score: '0–100. Competitive share of AI answer content for this topic.',
+        sentiment_score_0_to_100: '0–100. Avg sentiment of brand mentions in this topic. 50=neutral, >70=positive, <40=negative.',
+        brand_presence_pct: '0–100. % of AI responses in this topic that mentioned the brand at least once.',
+        prompt_count: 'Total number of tracked queries grouped under this topic.',
+        null_values: 'null = no data collected in this period. NEVER report null as 0 or as a score.',
+      },
     },
   };
 
@@ -449,10 +390,12 @@ export async function executeQueriesTrend(inputs: any, ctx: any, dbToken: string
       });
 
       const avgVisibility = summaries.length > 0
-        ? summaries.reduce((sum, s) => sum + s.visibility_score, 0) / summaries.length
-        : 0;
+        ? summaries.reduce((sum, s) => sum + (s.visibility_score ?? 0), 0) / summaries.length
+        : null; // null = no data, not zero
 
-      const totalMentions = summaries.reduce((sum, s) => sum + s.mentions, 0);
+      const totalMentions = summaries.length > 0
+        ? summaries.reduce((sum, s) => sum + (s.mentions ?? 0), 0)
+        : null;
 
       periodResults.push({
         period_label: label,

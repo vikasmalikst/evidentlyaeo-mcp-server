@@ -219,7 +219,7 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
  */
 export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, queryText, includeCompetitors = false } = inputs;
-  const detail = await queryAggregationService.getQueryDetail(brandId, ctx.customerId, queryText);
+  const detail = await queryAggregationService.getQueryDetail(brandId, ctx.customerId, queryText, startDate, endDate);
 
   if (!detail) {
     return {

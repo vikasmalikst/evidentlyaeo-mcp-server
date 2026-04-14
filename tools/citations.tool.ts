@@ -22,6 +22,9 @@ export const citationsTopSourcesSchema = z.object({
   ...dateRangeSchema.shape,
   ...collectorsSchema.shape,
   ...fieldsSchema.shape,
+  queryType: z.enum(['branded', 'neutral', 'competitor']).optional().describe(
+    'Filter citations to only those from queries of this type.'
+  ),
   topN: z.number().int().min(1).max(30).optional().describe(
     'Max sources to return, sorted by mention count descending. Default 10. Use 5 for quick summaries.'
   ),
@@ -31,7 +34,7 @@ export const citationsTopSourcesSchema = z.object({
 });
 
 export async function executeCitationsTopSources(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, collectors, topN = 10, fields } = inputs;
+  const { brandId, startDate, endDate, collectors, queryType, topN = 10, fields } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   const sources = await citationAggregationService.getTopCitedSources({
@@ -40,6 +43,7 @@ export async function executeCitationsTopSources(inputs: any, ctx: any, dbToken:
     startDate,
     endDate,
     collectors,
+    queryType,
     limit: topN,
   });
 

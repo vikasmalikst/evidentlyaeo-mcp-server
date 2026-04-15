@@ -28,9 +28,10 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
 
   let query = supabaseAdmin
     .from('recommendations')
-    .select('id, action, reason, impact_score, priority, category:citation_category, created_at')
+    .select('id, action, reason, impact_score, priority, review_status, category:citation_category, created_at')
     .eq('brand_id', brandId)
     .eq('customer_id', ctx.customerId)
+    .neq('review_status', 'rejected')
     .order('impact_score', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -67,6 +68,7 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
       reason: r.reason,
       impact_score_0_to_100: r.impact_score,
       priority: r.priority,
+      review_status: r.review_status ?? 'pending',
       category: r.category,
       created_at: r.created_at,
     })),
@@ -75,7 +77,8 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
       brand_id: brandId,
       data_source: 'EvidentlyAEO AI-generated recommendations — based on real collected data',
       usage_note:
-        'impact_score is 0–100. Report recommendations exactly as listed. Do NOT add, modify, or prioritize differently than shown.',
+        'impact_score is 0–100. review_status reflects current state: pending | approved | rejected ' +
+        '(rejected items are pre-filtered out). Report recommendations exactly as listed.',
     },
   };
 }
@@ -101,7 +104,9 @@ export async function executeGetRecommendationDetail(inputs: any, ctx: any, dbTo
     recommendation: data,
     _meta: {
       data_source: 'EvidentlyAEO recommendations database — exact stored record',
-      usage_note: 'Report this recommendation exactly as stored. Do NOT embellish or add context not present in the data.',
+      usage_note: 
+        'Report this recommendation exactly as stored. review_status reflects if it is approved, pending, or rejected. ' +
+        'Do NOT embellish or add context not present in the data.',
     },
   };
 }

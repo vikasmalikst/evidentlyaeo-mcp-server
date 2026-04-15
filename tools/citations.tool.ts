@@ -22,8 +22,22 @@ export const citationsTopSourcesSchema = z.object({
   ...dateRangeSchema.shape,
   ...collectorsSchema.shape,
   ...fieldsSchema.shape,
-  queryType: z.enum(['branded', 'neutral', 'competitor']).optional().describe(
-    'Filter citations to only those from queries of this type.'
+  queryType: z.preprocess(
+    (val) => {
+      if (typeof val !== 'string') return val;
+      const map: Record<string, string> = {
+        'neutral': 'neutral', 'blind': 'neutral', 'unprompted': 'neutral',
+        'branded': 'branded', 'brand': 'branded', 'biased': 'branded',
+        'competitor': 'competitor',
+      };
+      return map[val.toLowerCase()] ?? val;
+    },
+    z.enum(['branded', 'neutral', 'competitor']).optional()
+  ).describe(
+    'Filter citations to only those from queries of this type. ' +
+    '"neutral" = blind/unprompted queries (NO brand name in query). SYNONYMS: "blind", "unprompted". ' +
+    '"branded" = queries that explicitly named this brand. SYNONYMS: "brand", "biased". ' +
+    '"competitor" = queries naming a competitor.'
   ),
   topN: z.number().int().min(1).max(30).optional().describe(
     'Max sources to return, sorted by mention count descending. Default 10. Use 5 for quick summaries.'

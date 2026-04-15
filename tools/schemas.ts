@@ -33,8 +33,14 @@ export const brandIdSchema = z.object({
 });
 
 export const collectorsSchema = z.object({
-  collectors: z.array(z.string()).optional().describe(
-    'Optional list of AI collector slugs to filter by. Valid values include: "chatgpt", "perplexity", "gemini", "claude", "copilot". ' +
+  collectors: z.preprocess(
+    (val) => Array.isArray(val) 
+      ? val.map(v => typeof v === 'string' ? v.toLowerCase() : v) 
+      : val,
+    z.array(z.string()).optional()
+  ).describe(
+    'Optional list of AI collector slugs to filter by. ' +
+    'Values are case-insensitive. Valid values include: "chatgpt", "perplexity", "gemini", "grok", "google_aio", "copilot". ' +
     'Omit to include all collectors.'
   ),
 });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { sourceAttributionService } from '../../services/source-attribution.service';
+import { sourceAttributionService } from '../../services/source-attribution';
 import { citationAggregationService } from '../../services/mcp-aggregations/citation-aggregation.service';
 import { validateBrandOwnership } from '../middleware/brand-guard';
 import { McpSystemError } from '../utils/response-formatter';

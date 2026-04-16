@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-jest.mock('../../../services/source-attribution.service', () => ({
+jest.mock('../../../services/source-attribution', () => ({
   sourceAttributionService: {
     getSourceAttribution: jest.fn(),
   },
@@ -10,7 +10,7 @@ jest.mock('../../middleware/brand-guard', () => ({
   validateBrandOwnership: jest.fn(),
 }));
 
-import { sourceAttributionService } from '../../../services/source-attribution.service';
+import { sourceAttributionService } from '../../../services/source-attribution';
 import { validateBrandOwnership } from '../../middleware/brand-guard';
 import { executeSourceAttribution } from '../citations.tool';
 

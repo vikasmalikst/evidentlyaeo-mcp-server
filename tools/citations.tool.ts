@@ -51,44 +51,100 @@ export async function executeCitationsTopSources(inputs: any, ctx: any, dbToken:
   const { brandId, startDate, endDate, collectors, queryType, topN = 10, fields } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
-  const sources = await citationAggregationService.getTopCitedSources({
+  // Map canonical queryType back to DB query_tag values (DB stores 'blind'/'brand', not 'neutral'/'branded')
+  const dbQueryTagMap: Record<string, string> = {
+    'neutral': 'blind',
+    'branded': 'brand',
+    'competitor': 'competitor',
+  };
+  const dbQueryTag = queryType ? dbQueryTagMap[queryType] ?? queryType : undefined;
+
+  // ✅ Use same service as frontend. Pass queryType as queryTags if provided.
+  const raw = await sourceAttributionService.getSourceAttribution(
     brandId,
-    customerId: ctx.customerId,
-    startDate,
-    endDate,
+    ctx.customerId,
+    { start: startDate, end: endDate },
+    undefined,
     collectors,
-    queryType,
-    limit: topN,
+    dbQueryTag ? [dbQueryTag] : undefined
+  );
+
+  const allSources = raw.sources || [];
+  const totalCitations = allSources.reduce((acc: number, s: any) => acc + (s.citations || 0), 0);
+
+  // ✅ Compute impact score using SAME formula as frontend valueScoreForSource()
+  const maxCitations = Math.max(...allSources.map((s: any) => s.citations || 0), 1);
+  const maxSentiment = Math.max(...allSources.map((s: any) => s.sentiment || 0), 1);
+  const maxTopics = Math.max(...allSources.map((s: any) => (s.topics?.length || 0)), 1);
+
+  const scored = allSources.map((s: any) => {
+    const sentimentNorm = maxSentiment > 0 ? Math.min(100, (s.sentiment / maxSentiment) * 100) : 0;
+    const citationsNorm = maxCitations > 0 ? (s.citations / maxCitations) * 100 : 0;
+    const topicsNorm = maxTopics > 0 ? ((s.topics?.length || 0) / maxTopics) * 100 : 0;
+    
+    // Weighted formula: mentionRate×0.3 + soa×0.3 + sentiment×0.2 + citations×0.1 + topics×0.1
+    const impact_score = Math.round(
+      (s.mentionRate || 0) * 0.3 +
+      (s.soa || 0) * 0.3 +
+      sentimentNorm * 0.2 +
+      citationsNorm * 0.1 +
+      topicsNorm * 0.1
+    );
+
+    // ✅ Compute quadrant using SAME logic as frontend classifyQuadrant()
+    const mentionRate = s.mentionRate || 0;
+    const soa = s.soa || 0;
+    let category: string;
+    if (mentionRate >= 50 && soa >= 50 && impact_score >= 40) category = 'priority';
+    else if (mentionRate >= 50 && (s.sentiment < 50 || s.citations < 2)) category = 'reputation';
+    else if (mentionRate < 50 && (s.sentiment > 60 || s.citations > 1)) category = 'growth';
+    else category = 'monitor';
+
+    return {
+      domain: s.name,
+      source_type: s.type || null,
+      impact_score,
+      mention_rate_pct: r1(s.mentionRate),
+      soa_pct: r1(s.soa),
+      sentiment_score: r1(s.sentiment),
+      sentiment_label: s.sentiment > 65 ? 'positive' : s.sentiment < 40 ? 'negative' : 'neutral',
+      citations_count: s.citations || 0,
+      citations_pct: r1(totalCitations > 0 ? (s.citations / totalCitations) * 100 : 0),
+      category,  // priority | reputation | growth | monitor
+    };
   });
 
+  const sorted = scored.sort((a: any, b: any) => b.impact_score - a.impact_score).slice(0, topN);
+
+  // ✅ Also include source type distribution (mirrors the bar chart)
+  const typeDistribution = allSources.reduce((acc: any, s: any) => {
+    const t = (s.type || 'unknown').toLowerCase();
+    acc[t] = (acc[t] || 0) + 1;
+    return acc;
+  }, {});
+
   const result = {
-    sources: sources.map(s => ({
-      domain: s.domain,
-      citation_count: s.citation_count,
-      mention_rate_pct: s.mention_rate_pct,
-      sentiment_score: r1(s.avg_sentiment),
-      sentiment_label: s.sentiment_label,
-      source_type: s.source_type,
-    })).length > 0 ? sources.map(s => ({
-      domain: s.domain,
-      citation_count: s.citation_count,
-      mention_rate_pct: s.mention_rate_pct,
-      sentiment_score: r1(s.avg_sentiment),
-      sentiment_label: s.sentiment_label,
-      source_type: s.source_type,
-    })) : annotateEmptyArray('citation sources', `brand ${brandId}`),
+    sources: sorted.length > 0 ? sorted : annotateEmptyArray('citation sources', `brand ${brandId}`),
+    source_type_distribution: typeDistribution,
+    category_summary: {
+      priority: scored.filter((s: any) => s.category === 'priority').length,
+      reputation: scored.filter((s: any) => s.category === 'reputation').length,
+      growth: scored.filter((s: any) => s.category === 'growth').length,
+      monitor: scored.filter((s: any) => s.category === 'monitor').length,
+    },
     _meta: {
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
-      sources_returned: sources.length,
-      data_source: 'EvidentlyAEO citations — aggregated from citations table.',
+      sources_returned: sorted.length,
+      total_sources: allSources.length,
       field_guide: {
-        citation_count: 'Total times this domain was cited in AI responses for this brand.',
-        mention_rate_pct: '% share of total citations this domain represents.',
-        unique_query_count: 'How many distinct tracked queries cited this domain.',
-        sentiment_score: '0–100. Average sentiment of brand mentions in responses citing this domain.',
-        sentiment_label: 'positive | neutral | negative based on score.',
-        null_values: 'null means no data was collected. Do NOT report null as 0.',
+        impact_score: 'Composite 0–100 score: mentionRate×0.3 + SOA×0.3 + sentiment×0.2 + citations×0.1 + topics×0.1. This is the PRIMARY ranking field.',
+        mention_rate_pct: '% of AI responses for this brand that cited this domain.',
+        soa_pct: 'Share of AI response text attributed to this domain.',
+        sentiment_score: '0–100. Sentiment of brand mentions in this domain\'s responses.',
+        citations_pct: '% of total citation events from this domain.',
+        category: 'priority = high visibility + high SOA. reputation = high visibility + low sentiment. growth = low visibility + positive signals. monitor = low on all.',
+        null_values: 'null = no data. Do NOT report null as 0.',
       }
     }
   };

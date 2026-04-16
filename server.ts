@@ -214,13 +214,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'citations_top_sources',
-    'Returns the top domains/websites citing this brand in AI responses, ranked by mention count. ' +
-    'Each row: domain, mention_count, mention_rate_pct (0–100), sentiment_score (0–100). ' +
-    'ALWAYS call this first for any question about citation sources, which websites mention the brand, ' +
-    'or citation performance. ' +
-    'Do NOT call citations_source_attribution for these questions. ' +
-    'Do NOT call citations_source_detail unless the user names a specific domain. ' +
-    'Do NOT call citations_trend unless the user asks about change over time.',
+    'Use this tool to get top citation sources for a brand. Sort by impact_score (the main metric on the Citations Sources page). Also returns category (priority/reputation/growth/monitor) and source_type_distribution.',
     citationsTopSourcesSchema.shape as any,
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_top_sources', 'read:citations', inputs, executeCitationsTopSources, sessionId);

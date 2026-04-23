@@ -124,7 +124,6 @@ function registerTools(server: McpServer, sessionId: string) {
     '                 Measures organic AI discoverability (is the brand mentioned when nobody asked about it?). ' +
     '                 This is the most important visibility signal. ' +
     '  "brand"      = Queries that explicitly name this brand. ' +
-    '  "competitor" = Queries that explicitly name a competitor brand. ' +
     '  "all"        = All query types combined (default). ' +
     'ALWAYS call this first for any question about query performance, top queries, ' +
     'neutral/blind/unprompted visibility, SOA, or query-level metrics. ' +
@@ -148,7 +147,7 @@ function registerTools(server: McpServer, sessionId: string) {
     'Results are sorted by largest competitive loss first (worst gaps at top). ' +
     'CALL THIS when the user asks: which queries are competitors winning, ' +
     'where are we losing AI visibility to competitors, what are our competitive ' +
-    'query gaps, or how we compare on blind/brand/competitor queries vs a named competitor. ' +
+    'query gaps, or how we compare on blind/brand queries vs a named competitor. ' +
     'Do NOT call this for brand-level competitor comparison — ' +
     'use dashboard_list_competitors for that instead.',
     queriesCompetitorOverlapSchema.shape as any,
@@ -164,8 +163,6 @@ function registerTools(server: McpServer, sessionId: string) {
     'for that exact query, including visibility, SOA, mentions, and avg position. ' +
     'ONLY call this when the user asks about a specific AI engine AND a specific query simultaneously. ' +
     'Requires queryText — copy the exact value from a queries_summary result. ' +
-    'Set includeCompetitors: true ONLY when the user explicitly asks how a competitor ' +
-    'performs on a specific AI engine for a specific query. ' +
     'Do NOT use this for brand-level per-engine data — use dashboard_llm_breakdown instead.',
     queriesCollectorBreakdownSchema.shape as any,
     async (inputs: any) => {
@@ -298,7 +295,7 @@ function registerResources(server: McpServer) {
     {
       mimeType: DICTIONARY_MIME,
       description:
-        'Definitions for all EvidentlyAEO metrics: Visibility, SOA, Presence Rate, Sentiment, Blind/Brand/Competitor queries, and null value rules. Reference this before interpreting any metric values.',
+        'Definitions for all EvidentlyAEO metrics: Visibility, SOA, Presence Rate, Sentiment, Blind/Brand queries, and null value rules. Reference this before interpreting any metric values.',
     },
     async () => ({
       contents: [{

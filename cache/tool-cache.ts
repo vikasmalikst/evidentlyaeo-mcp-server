@@ -21,7 +21,7 @@ export function buildCacheKey(
     .sort()
     .map(k => `${k}=${JSON.stringify(params[k])}`)
     .join('&');
-  return `${toolName}:${customerId}:${brandId}:${sorted}`;
+  return `v2:${toolName}:${customerId}:${brandId}:${sorted}`;
 }
 
 export function getCached(key: string): unknown | null {

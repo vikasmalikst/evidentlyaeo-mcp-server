@@ -42,6 +42,10 @@ export const queriesSummarySchema = z.object({
     'Max queries to return, sorted by visibility score descending. ' +
     'Default 20. Use 5–10 for a quick overview, 50 for exhaustive analysis.'
   ),
+  includeCompetitors: z.boolean().optional().describe(
+    'Set true to include a breakdown of competitor visibility scores for every query. ' +
+    'Default false. Only use when explicitly asked to compare with competitors.'
+  ),
 });
 
 /** Schema for queries_competitor_overlap — Tier 2 competitive gap tool */
@@ -97,7 +101,8 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     endDate,
     collectors,
     queryType,
-    limit
+    limit,
+    includeCompetitors: inputs.includeCompetitors ?? false
   });
 
   const slimmed = summaries.map(s => ({
@@ -110,11 +115,13 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     total_brand_mentions: s.mentions,
     brand_presence_pct: r1(s.brand_presence_pct),
     topic_name: s.topic,
-    competitors: s.competitors?.map(c => ({
-      ...c,
-      visibility_score: r1(c.visibility_score),
-      soa_score: r1(c.soa_score),
-    })) ?? [],
+    ...(inputs.includeCompetitors ? {
+      competitors: s.competitors?.map(c => ({
+        ...c,
+        visibility_score: r1(c.visibility_score),
+        soa_score: r1(c.soa_score),
+      })) ?? []
+    } : {}),
   }));
 
   const sorted = slimmed; // Service already performs sort and limit

@@ -73,6 +73,10 @@ export const queriesCollectorBreakdownSchema = z.object({
     'The exact query text to drill into. Copy the value from queries_summary output. ' +
     'This tool requires a specific query — do not pass a topic name or a category.'
   ),
+  includeCompetitors: z.boolean().optional().describe(
+    'Set true to include competitor breakdown per collector for this query. ' +
+    'Default false. Only use when the user explicitly asks for competitor engine-level data.'
+  ),
   ...queryTypeSchema.shape,
 });
 
@@ -83,6 +87,10 @@ export const topicsPerformanceSchema = z.object({
   ...collectorsSchema.shape,
   ...fieldsSchema.shape,
   ...queryTypeSchema.shape,
+  includeCompetitors: z.boolean().optional().describe(
+    'Set true to include per-competitor visibility, SOA, and sentiment for each topic. ' +
+    'Default false. Only use when user asks about competitor topic performance.'
+  ),
 });
 
 /** Backward-compat schema alias — delegates to queriesSummarySchema */
@@ -270,8 +278,15 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
  * on a vague intent and receiving a large multi-query payload.
  */
 export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, queryText, queryType } = inputs;
-  const detail = await queryAggregationService.getQueryDetail(brandId, ctx.customerId, queryText, startDate, endDate);
+  const { brandId, startDate, endDate, queryText, includeCompetitors } = inputs;
+  const detail = await queryAggregationService.getQueryDetail(
+    brandId,
+    ctx.customerId,
+    queryText,
+    startDate,
+    endDate,
+    { includeCompetitors: includeCompetitors ?? false }
+  );
 
   if (!detail) {
     return {
@@ -335,7 +350,7 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, fields, collectors, queryType = 'all' } = inputs;
+  const { brandId, startDate, endDate, fields, collectors, queryType = 'all', includeCompetitors = false } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   const topicSummaries = await queryAggregationService.getTopicsSummary({
@@ -344,7 +359,8 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
     startDate,
     endDate,
     collectors,
-    queryType
+    queryType,
+    includeCompetitors
   });
 
   const topics = topicSummaries.map(t => ({
@@ -354,7 +370,15 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
     sentiment_score_0_to_100: r1(t.sentiment_score),
     total_brand_mentions: t.mentions,
     share_of_answer_score: r1(t.share_of_answer_score),
-    brand_presence_pct: r1(t.brand_presence_pct)
+    brand_presence_pct: r1(t.brand_presence_pct),
+    ...(includeCompetitors && t.competitors?.length ? {
+      competitors: t.competitors.map(c => ({
+        name: c.name,
+        visibility_score: r1(c.visibility_score),
+        soa_score: r1(c.soa_score),
+        sentiment_score: r1(c.sentiment_score),
+      }))
+    } : {})
   }));
 
   const result = topics.length === 0 ? {

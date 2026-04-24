@@ -61,6 +61,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'brands_list',
     'Returns all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date. Call this when a brandId is missing. Do NOT call this if the user already provided a valid brandId.',
     brandsListSchema.shape as any,
+    {
+      title: 'List Brands',
+      readOnlyHint: 'Fetches all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('brands_list', 'read:brands', inputs, executeBrandsList, sessionId);
     }
@@ -74,6 +78,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'dashboard_get_summary',
     'Returns core KPI summary for a brand: Search Visibility %, Sentiment Score, Brand Presence Rate, total prompts tracked, and top 5 topics. Call this first for any brand performance question.',
     dashboardGetSummarySchema.shape as any,
+    {
+      title: 'Get Dashboard Summary',
+      readOnlyHint: 'Returns core KPI summary for a brand: Search Visibility %, Sentiment Score, Brand Presence Rate, and top topics.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_get_summary', 'read:dashboard', inputs, executeDashboardGetSummary, sessionId);
     }
@@ -83,6 +91,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'dashboard_list_competitors',
     'Returns competitor comparison data: visibility %, share of answer %, sentiment, and mention counts for all tracked competitors. Call this ONLY when the user asks about competitors or competitive gaps at the brand level. For query-level competitor gaps, use queries_competitor_overlap instead.',
     dashboardListCompetitorsSchema.shape as any,
+    {
+      title: 'List Competitors',
+      readOnlyHint: 'Returns competitor comparison data: visibility %, share of answer %, sentiment, and mention counts.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_list_competitors', 'read:dashboard', inputs, executeDashboardListCompetitors, sessionId);
     }
@@ -92,6 +104,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'dashboard_llm_breakdown',
     'Returns per-LLM performance breakdown: visibility, share of answer, and sentiment split by AI engine (ChatGPT, Perplexity, Gemini, etc.). Call this ONLY when the user asks about specific AI engine performance at the brand level. For per-engine data on a specific query, use queries_collector_breakdown instead.',
     dashboardLlmBreakdownSchema.shape as any,
+    {
+      title: 'LLM Performance Breakdown',
+      readOnlyHint: 'Returns per-LLM performance breakdown: visibility, share of answer, and sentiment split by AI engine.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_llm_breakdown', 'read:dashboard', inputs, executeDashboardLlmBreakdown, sessionId);
     }
@@ -101,6 +117,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'dashboard_get_action_items',
     'Returns AI-generated action items from the latest dashboard analysis for a brand. Call this when the user asks what to do, what to improve, or for next steps.',
     dashboardGetActionItemsSchema.shape as any,
+    {
+      title: 'Get Action Items',
+      readOnlyHint: 'Returns AI-generated action items and next steps from the latest dashboard analysis.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_get_action_items', 'read:dashboard', inputs, executeDashboardGetActionItems, sessionId);
     }
@@ -132,6 +152,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'Do NOT call queries_competitor_overlap unless the user asks about ' +
     'competitive gaps or which queries competitors are winning.',
     queriesSummarySchema.shape as any,
+    {
+      title: 'Queries Summary',
+      readOnlyHint: 'Returns top-performing tracked queries for a brand with aggregated visibility, SOA, and brand presence scores.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_summary', 'read:queries', inputs, executeQueriesSummary, sessionId);
     }
@@ -151,6 +175,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'Do NOT call this for brand-level competitor comparison — ' +
     'use dashboard_list_competitors for that instead.',
     queriesCompetitorOverlapSchema.shape as any,
+    {
+      title: 'Competitor Query Overlap',
+      readOnlyHint: 'Returns queries where tracked competitors also appear in AI responses, showing the visibility gap.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_competitor_overlap', 'read:queries', inputs, executeQueriesCompetitorOverlap, sessionId);
     }
@@ -165,6 +193,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'Requires queryText — copy the exact value from a queries_summary result. ' +
     'Do NOT use this for brand-level per-engine data — use dashboard_llm_breakdown instead.',
     queriesCollectorBreakdownSchema.shape as any,
+    {
+      title: 'Collector Query Breakdown',
+      readOnlyHint: 'Returns per-AI-engine performance (ChatGPT vs Perplexity vs Gemini) for one specific query.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_collector_breakdown', 'read:queries', inputs, executeQueriesCollectorBreakdown, sessionId);
     }
@@ -178,6 +210,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'or which content categories drive the most AI visibility. ' +
     'Do NOT call this for individual query-level data — use queries_summary for that.',
     topicsPerformanceSchema.shape as any,
+    {
+      title: 'Topics Performance',
+      readOnlyHint: 'Returns performance data aggregated by topic group including visibility, SOA, and sentiment.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('topics_performance', 'read:queries', inputs, executeTopicsPerformance, sessionId);
     }
@@ -193,6 +229,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'Set includeMovers: true ONLY when the user explicitly asks which queries moved the most. ' +
     'Do NOT use this for current snapshot data — use queries_summary for that.',
     queriesTrendSchema.shape as any,
+    {
+      title: 'Queries Trend',
+      readOnlyHint: 'Returns period-over-period changes in query visibility, mention volume, and top movers.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_trend', 'read:queries', inputs, executeQueriesTrend, sessionId);
     }
@@ -213,6 +253,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'citations_top_sources',
     'Use this tool to get top citation sources for a brand. Sort by impact_score (the main metric on the Citations Sources page). Also returns category (priority/reputation/growth/monitor) and source_type_distribution.',
     citationsTopSourcesSchema.shape as any,
+    {
+      title: 'Top Citation Sources',
+      readOnlyHint: 'Returns top citation sources for a brand sorted by impact score and source type distribution.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_top_sources', 'read:citations', inputs, executeCitationsTopSources, sessionId);
     }
@@ -226,6 +270,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'Requires the exact domain string — call citations_top_sources first if you do not know it. ' +
     'Do NOT call this to get a list of sources — use citations_top_sources for that.',
     citationsSourceDetailSchema.shape as any,
+    {
+      title: 'Source Detail',
+      readOnlyHint: 'Returns full citation analytics for one specific domain, including mention count and sentiment.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_source_detail', 'read:citations', inputs, executeCitationsSourceDetail, sessionId);
     }
@@ -240,6 +288,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'or where should we build backlinks/content for AI citation. ' +
     'Do NOT call this for general citation performance — use citations_top_sources instead.',
     citationsCompetitorGapSchema.shape as any,
+    {
+      title: 'Citation Competitor Gap',
+      readOnlyHint: 'Returns domains that cite tracked competitors but not this brand, identifying outreach opportunities.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_competitor_gap', 'read:citations', inputs, executeCitationsCompetitorGap, sessionId);
     }
@@ -253,6 +305,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'Do NOT call this for current snapshot data — use citations_top_sources for that. ' +
     'Do NOT call citations_source_attribution for trend questions.',
     citationsTrendSchema.shape as any,
+    {
+      title: 'Citations Trend',
+      readOnlyHint: 'Returns period-over-period changes in citation volume, mention rate, and sentiment.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_trend', 'read:citations', inputs, executeCitationsTrend, sessionId);
     }
@@ -264,6 +320,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'recommendations_list',
     'Returns strategy recommendations for a brand with actions, reasons, and impact scores. Call this when the user asks what to improve next. Do NOT call this for raw KPI retrieval.',
     listRecommendationsSchema.shape as any,
+    {
+      title: 'List Recommendations',
+      readOnlyHint: 'Returns strategy recommendations for a brand including suggested actions and impact scores.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('recommendations_list', 'read:recommendations', inputs, executeListRecommendations, sessionId);
     }
@@ -273,6 +333,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'recommendations_get_detail',
     'Returns full detail for a specific recommendation ID. Call this only after obtaining an ID from recommendations_list. Do NOT call this to list recommendations.',
     getRecommendationDetailSchema.shape as any,
+    {
+      title: 'Get Recommendation Detail',
+      readOnlyHint: 'Returns full detail for a specific recommendation ID, including deep context and rationale.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('recommendations_get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail, sessionId);
     }
@@ -282,6 +346,10 @@ function registerTools(server: McpServer, sessionId: string) {
     'domain_readiness_get_audit',
     'Returns the latest domain readiness audit for a brand. Call this for website/domain readiness questions. Do NOT call this for citation, query, or dashboard KPI analysis.',
     getDomainAuditSchema.shape as any,
+    {
+      title: 'Get Domain Audit',
+      readOnlyHint: 'Returns the latest domain readiness audit for a brand, covering technical AEO optimizations.'
+    },
     async (inputs: any) => {
       return await executeToolWithMiddleware('domain_readiness_get_audit', 'read:domain', inputs, executeGetDomainAudit, sessionId);
     }

@@ -13,6 +13,28 @@ function r1(v: number | null | undefined): number | null {
   return Math.round(v * 10) / 10;
 }
 
+type CompetitorDataState = 'included_with_rows' | 'included_no_rows' | 'explicitly_excluded';
+
+function getCompetitorDataState(
+  includeCompetitors: boolean,
+  rows: Array<{ competitors?: unknown[] }>
+): CompetitorDataState {
+  if (!includeCompetitors) return 'explicitly_excluded';
+  return rows.some(r => Array.isArray(r.competitors) && r.competitors.length > 0)
+    ? 'included_with_rows'
+    : 'included_no_rows';
+}
+
+function getCollectorCompetitorDataState(
+  includeCompetitors: boolean,
+  rows: Array<{ competitor_details?: Record<string, unknown> }>
+): CompetitorDataState {
+  if (!includeCompetitors) return 'explicitly_excluded';
+  return rows.some(r => r.competitor_details && Object.keys(r.competitor_details).length > 0)
+    ? 'included_with_rows'
+    : 'included_no_rows';
+}
+
 const COMPETITOR_OVERLAP_INTERNAL_LIMIT = 500;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,7 +66,7 @@ export const queriesSummarySchema = z.object({
   ),
   includeCompetitors: z.boolean().optional().describe(
     'Set true to include a breakdown of competitor visibility scores for every query. ' +
-    'Default false. Only use when explicitly asked to compare with competitors.'
+    'Default true when omitted. Set false only when you explicitly need a smaller brand-only payload.'
   ),
 });
 
@@ -89,7 +111,7 @@ export const topicsPerformanceSchema = z.object({
   ...queryTypeSchema.shape,
   includeCompetitors: z.boolean().optional().describe(
     'Set true to include per-competitor visibility, SOA, and sentiment for each topic. ' +
-    'Default false. Only use when user asks about competitor topic performance.'
+    'Default true when omitted. Set false only when you explicitly need a smaller brand-only payload.'
   ),
 });
 
@@ -100,6 +122,7 @@ export const queryPerformanceSchema = queriesSummarySchema;
 
 export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: string) {
   const { brandId, startDate, endDate, limit = 20, queryType = 'all', fields, collectors } = inputs;
+  const includeCompetitors = inputs.includeCompetitors ?? true;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   const summaries = await queryAggregationService.getQueriesSummary({
@@ -110,7 +133,7 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     collectors,
     queryType,
     limit,
-    includeCompetitors: inputs.includeCompetitors ?? false
+    includeCompetitors
   });
 
   const slimmed = summaries.map(s => ({
@@ -123,7 +146,7 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     total_brand_mentions: s.mentions,
     brand_presence_pct: r1(s.brand_presence_pct),
     topic_name: s.topic,
-    ...(inputs.includeCompetitors ? {
+    ...(includeCompetitors ? {
       competitors: s.competitors?.map(c => ({
         ...c,
         visibility_score: r1(c.visibility_score),
@@ -131,6 +154,8 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
       })) ?? []
     } : {}),
   }));
+
+  const competitorDataState = getCompetitorDataState(includeCompetitors, slimmed);
 
   const sorted = slimmed; // Service already performs sort and limit
 
@@ -145,6 +170,8 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
       query_type_filter: queryType,
       query_type_note: 'blind = neutral = unprompted (no brand name in query). brand = explicit brand mention.',
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      include_competitors_effective: includeCompetitors,
+      competitor_data_state: competitorDataState,
       empty_reason: `No ${queryTypeLabel} found for this brand in the selected date range. This means no data was collected — not that performance was zero.`,
     },
   } : {
@@ -155,6 +182,8 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
       query_type_filter: queryType,
       query_type_note: 'blind = neutral = unprompted (no brand name in query). brand = explicit brand mention.',
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      include_competitors_effective: includeCompetitors,
+      competitor_data_state: competitorDataState,
       data_source: 'EvidentlyAEO prompt analytics — real tracked queries only. Do not extrapolate or estimate unlisted queries.',
       field_guide: {
         visibility_score: '0–100. Higher = brand appears more often in AI answers for this query.',
@@ -278,17 +307,18 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
  * on a vague intent and receiving a large multi-query payload.
  */
 export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, queryText, includeCompetitors } = inputs;
+  const { brandId, startDate, endDate, queryText, includeCompetitors = false } = inputs;
   const detail = await queryAggregationService.getQueryDetail(
     brandId,
     ctx.customerId,
     queryText,
     startDate,
     endDate,
-    { includeCompetitors: includeCompetitors ?? false }
+    { includeCompetitors }
   );
 
   if (!detail) {
+    const competitorDataState = getCollectorCompetitorDataState(includeCompetitors, []);
     return {
       content: [{
         type: 'text' as const,
@@ -298,6 +328,8 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
             brand_id: brandId,
             query_text: queryText,
             found: false,
+            include_competitors_effective: includeCompetitors,
+            competitor_data_state: competitorDataState,
             message: `No data found for query "${queryText}". Use queries_summary to see available options.`,
           },
         }),
@@ -328,6 +360,8 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
     return row;
   });
 
+  const competitorDataState = getCollectorCompetitorDataState(includeCompetitors, breakdown);
+
   const result = {
     query_text: detail.query_text,
     topic_name: detail.topic,
@@ -338,6 +372,8 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       collectors_returned: breakdown.length,
+      include_competitors_effective: includeCompetitors,
+      competitor_data_state: competitorDataState,
       data_source: 'EvidentlyAEO prompt analytics — optimized drill-down layer.',
     },
   };
@@ -350,7 +386,8 @@ export async function executeQueriesCollectorBreakdown(inputs: any, ctx: any, db
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, fields, collectors, queryType = 'all', includeCompetitors = false } = inputs;
+  const { brandId, startDate, endDate, fields, collectors, queryType = 'all' } = inputs;
+  const includeCompetitors = inputs.includeCompetitors ?? true;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   const topicSummaries = await queryAggregationService.getTopicsSummary({
@@ -371,8 +408,8 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
     total_brand_mentions: t.mentions,
     share_of_answer_score: r1(t.share_of_answer_score),
     brand_presence_pct: r1(t.brand_presence_pct),
-    ...(includeCompetitors && t.competitors?.length ? {
-      competitors: t.competitors.map(c => ({
+    ...(includeCompetitors ? {
+      competitors: (t.competitors ?? []).map(c => ({
         name: c.name,
         visibility_score: r1(c.visibility_score),
         soa_score: r1(c.soa_score),
@@ -381,11 +418,15 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
     } : {})
   }));
 
+  const competitorDataState = getCompetitorDataState(includeCompetitors, topics);
+
   const result = topics.length === 0 ? {
     topics: annotateEmptyArray('topics', `brand ${brandId} in this date range`),
     _meta: {
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      include_competitors_effective: includeCompetitors,
+      competitor_data_state: competitorDataState,
       empty_reason: 'No topics found for this brand in the selected date range.',
     },
   } : {
@@ -394,6 +435,8 @@ export async function executeTopicsPerformance(inputs: any, ctx: any, dbToken: s
     _meta: {
       brand_id: brandId,
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
+      include_competitors_effective: includeCompetitors,
+      competitor_data_state: competitorDataState,
       data_source: 'EvidentlyAEO topic analytics — real tracked data only',
       field_guide: {
         visibility_score_0_to_100: '0–100. % of prompts in this topic where brand appeared in AI responses.',

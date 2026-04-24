@@ -148,6 +148,9 @@ function registerTools(server: McpServer, sessionId: string) {
     'ALWAYS call this first for any question about query performance, top queries, ' +
     'neutral/blind/unprompted visibility, SOA, or query-level metrics. ' +
     'Set includeCompetitors: true when the user asks about competitor visibility on specific queries. ' +
+    'If prior turn asked query metrics and current turn asks competitor for the same scope/date, ' +
+    'reuse this tool and keep competitor inclusion enabled. ' +
+    'Example: "show visibility for query X" then "now show competitor Howdens for the same query". ' +
     'Do NOT call queries_collector_breakdown unless the user specifically asks ' +
     'about a named AI engine (ChatGPT, Perplexity, etc.) AND a specific query. ' +
     'Do NOT call queries_competitor_overlap unless the user asks about ' +
@@ -211,6 +214,9 @@ function registerTools(server: McpServer, sessionId: string) {
     'or which content categories drive the most AI visibility. ' +
     'Set includeCompetitors: true when the user asks how a competitor performs on a topic ' +
     'or wants a topic-vs-competitor comparison. ' +
+    'If prior turn asked topic metrics and current turn asks competitor for the same scope/date, ' +
+    'reuse this tool and keep competitor inclusion enabled. ' +
+    'Example: "show topic Awareness score" then "now show competitor Howdens for the same topic". ' +
     'Do NOT call this for individual query-level data — use queries_summary for that.',
     topicsPerformanceSchema.shape as any,
     {

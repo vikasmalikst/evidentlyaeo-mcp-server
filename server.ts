@@ -63,7 +63,7 @@ function registerTools(server: McpServer, sessionId: string) {
     brandsListSchema.shape as any,
     {
       title: 'List Brands',
-      readOnlyHint: 'Fetches all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('brands_list', 'read:brands', inputs, executeBrandsList, sessionId);
@@ -80,7 +80,7 @@ function registerTools(server: McpServer, sessionId: string) {
     dashboardGetSummarySchema.shape as any,
     {
       title: 'Get Dashboard Summary',
-      readOnlyHint: 'Returns core KPI summary for a brand: Search Visibility %, Sentiment Score, Brand Presence Rate, and top topics.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_get_summary', 'read:dashboard', inputs, executeDashboardGetSummary, sessionId);
@@ -93,7 +93,7 @@ function registerTools(server: McpServer, sessionId: string) {
     dashboardListCompetitorsSchema.shape as any,
     {
       title: 'List Competitors',
-      readOnlyHint: 'Returns competitor comparison data: visibility %, share of answer %, sentiment, and mention counts.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_list_competitors', 'read:dashboard', inputs, executeDashboardListCompetitors, sessionId);
@@ -106,7 +106,7 @@ function registerTools(server: McpServer, sessionId: string) {
     dashboardLlmBreakdownSchema.shape as any,
     {
       title: 'LLM Performance Breakdown',
-      readOnlyHint: 'Returns per-LLM performance breakdown: visibility, share of answer, and sentiment split by AI engine.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_llm_breakdown', 'read:dashboard', inputs, executeDashboardLlmBreakdown, sessionId);
@@ -119,7 +119,7 @@ function registerTools(server: McpServer, sessionId: string) {
     dashboardGetActionItemsSchema.shape as any,
     {
       title: 'Get Action Items',
-      readOnlyHint: 'Returns AI-generated action items and next steps from the latest dashboard analysis.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('dashboard_get_action_items', 'read:dashboard', inputs, executeDashboardGetActionItems, sessionId);
@@ -155,7 +155,7 @@ function registerTools(server: McpServer, sessionId: string) {
     queriesSummarySchema.shape as any,
     {
       title: 'Queries Summary',
-      readOnlyHint: 'Returns top-performing tracked queries for a brand with aggregated visibility, SOA, and brand presence scores.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_summary', 'read:queries', inputs, executeQueriesSummary, sessionId);
@@ -178,7 +178,7 @@ function registerTools(server: McpServer, sessionId: string) {
     queriesCompetitorOverlapSchema.shape as any,
     {
       title: 'Competitor Query Overlap',
-      readOnlyHint: 'Returns queries where tracked competitors also appear in AI responses, showing the visibility gap.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_competitor_overlap', 'read:queries', inputs, executeQueriesCompetitorOverlap, sessionId);
@@ -196,7 +196,7 @@ function registerTools(server: McpServer, sessionId: string) {
     queriesCollectorBreakdownSchema.shape as any,
     {
       title: 'Collector Query Breakdown',
-      readOnlyHint: 'Returns per-AI-engine performance (ChatGPT vs Perplexity vs Gemini) for one specific query.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_collector_breakdown', 'read:queries', inputs, executeQueriesCollectorBreakdown, sessionId);
@@ -215,7 +215,7 @@ function registerTools(server: McpServer, sessionId: string) {
     topicsPerformanceSchema.shape as any,
     {
       title: 'Topics Performance',
-      readOnlyHint: 'Returns performance data aggregated by topic group including visibility, SOA, and sentiment.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('topics_performance', 'read:queries', inputs, executeTopicsPerformance, sessionId);
@@ -234,7 +234,7 @@ function registerTools(server: McpServer, sessionId: string) {
     queriesTrendSchema.shape as any,
     {
       title: 'Queries Trend',
-      readOnlyHint: 'Returns period-over-period changes in query visibility, mention volume, and top movers.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('queries_trend', 'read:queries', inputs, executeQueriesTrend, sessionId);
@@ -258,7 +258,7 @@ function registerTools(server: McpServer, sessionId: string) {
     citationsTopSourcesSchema.shape as any,
     {
       title: 'Top Citation Sources',
-      readOnlyHint: 'Returns top citation sources for a brand sorted by impact score and source type distribution.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_top_sources', 'read:citations', inputs, executeCitationsTopSources, sessionId);
@@ -275,7 +275,7 @@ function registerTools(server: McpServer, sessionId: string) {
     citationsSourceDetailSchema.shape as any,
     {
       title: 'Source Detail',
-      readOnlyHint: 'Returns full citation analytics for one specific domain, including mention count and sentiment.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_source_detail', 'read:citations', inputs, executeCitationsSourceDetail, sessionId);
@@ -293,7 +293,7 @@ function registerTools(server: McpServer, sessionId: string) {
     citationsCompetitorGapSchema.shape as any,
     {
       title: 'Citation Competitor Gap',
-      readOnlyHint: 'Returns domains that cite tracked competitors but not this brand, identifying outreach opportunities.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_competitor_gap', 'read:citations', inputs, executeCitationsCompetitorGap, sessionId);
@@ -310,7 +310,7 @@ function registerTools(server: McpServer, sessionId: string) {
     citationsTrendSchema.shape as any,
     {
       title: 'Citations Trend',
-      readOnlyHint: 'Returns period-over-period changes in citation volume, mention rate, and sentiment.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('citations_trend', 'read:citations', inputs, executeCitationsTrend, sessionId);
@@ -325,7 +325,7 @@ function registerTools(server: McpServer, sessionId: string) {
     listRecommendationsSchema.shape as any,
     {
       title: 'List Recommendations',
-      readOnlyHint: 'Returns strategy recommendations for a brand including suggested actions and impact scores.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('recommendations_list', 'read:recommendations', inputs, executeListRecommendations, sessionId);
@@ -338,7 +338,7 @@ function registerTools(server: McpServer, sessionId: string) {
     getRecommendationDetailSchema.shape as any,
     {
       title: 'Get Recommendation Detail',
-      readOnlyHint: 'Returns full detail for a specific recommendation ID, including deep context and rationale.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('recommendations_get_detail', 'read:recommendations', inputs, executeGetRecommendationDetail, sessionId);
@@ -351,7 +351,7 @@ function registerTools(server: McpServer, sessionId: string) {
     getDomainAuditSchema.shape as any,
     {
       title: 'Get Domain Audit',
-      readOnlyHint: 'Returns the latest domain readiness audit for a brand, covering technical AEO optimizations.'
+      readOnlyHint: true
     },
     async (inputs: any) => {
       return await executeToolWithMiddleware('domain_readiness_get_audit', 'read:domain', inputs, executeGetDomainAudit, sessionId);

@@ -22,7 +22,7 @@ export const getRecommendationDetailSchema = z.object({
 });
 
 export async function executeListRecommendations(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, limit = 20, offset = 0, priority } = inputs;
+  const { brandId, startDate, endDate, limit, offset = 0, priority } = inputs;
 
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
@@ -32,8 +32,13 @@ export async function executeListRecommendations(inputs: any, ctx: any, dbToken:
     .eq('brand_id', brandId)
     .eq('customer_id', ctx.customerId)
     .neq('review_status', 'rejected')
-    .order('impact_score', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order('impact_score', { ascending: false });
+  
+  if (limit != null) {
+    query = query.range(offset, offset + limit - 1);
+  } else if (offset > 0) {
+    query = query.range(offset, 999999);
+  }
 
   if (startDate) query = query.gte('created_at', startDate);
   if (endDate) query = query.lte('created_at', endDate);

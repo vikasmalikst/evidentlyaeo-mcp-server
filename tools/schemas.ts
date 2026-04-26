@@ -18,8 +18,8 @@ export const dateRangeSchema = z.object({
 });
 
 export const paginationSchema = z.object({
-  limit: z.number().int().min(1).max(100).optional().describe(
-    'Maximum number of items to return. Default 20. Use lower values (5–10) for quick summaries.'
+  limit: z.number().int().min(1).optional().describe(
+    'Maximum number of items to return. Omit to return all results. Use 5–10 for quick summaries.'
   ),
   offset: z.number().int().min(0).optional().describe(
     'Number of items to skip for pagination. Use with limit for paging through large result sets.'

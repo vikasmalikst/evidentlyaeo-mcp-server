@@ -101,8 +101,8 @@ export const queriesCompetitorOverlapSchema = z.object({
     'Filter to a specific competitor name (must match exactly as it appears in the data). ' +
     'Omit to return overlap with ALL tracked competitors.'
   ),
-  limit: z.number().int().min(1).max(30).optional().describe(
-    'Max queries to return. Default 20. Results are sorted by largest competitive ' +
+  limit: z.number().int().min(1).optional().describe(
+    'Max queries to return. Omit to return all results. Results are sorted by largest competitive ' +
     'loss (most negative visibilityGap) first so the worst gaps appear at the top.'
   ),
 });
@@ -244,7 +244,7 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
 
 
 export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, limit = 20, queryType = 'all', competitorName, fields, collectors } = inputs;
+  const { brandId, startDate, endDate, limit, queryType = 'all', competitorName, fields, collectors } = inputs;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
   const summaries = await queryAggregationService.getQueriesSummary({
@@ -300,7 +300,7 @@ export async function executeQueriesCompetitorOverlap(inputs: any, ctx: any, dbT
   // Sort by worst gap first (most negative)
   overlapRows.sort((a, b) => a.visibility_gap - b.visibility_gap);
 
-  const sliced = overlapRows.slice(0, limit);
+  const sliced = limit != null ? overlapRows.slice(0, limit) : overlapRows;
 
   const uniqueCompetitorsCount = new Set(
     summaries.flatMap(s => (s.competitors || []).map(c => c.name))

@@ -60,9 +60,29 @@ export const queriesSummarySchema = z.object({
   ...collectorsSchema.shape,
   ...fieldsSchema.shape,
   ...queryTypeSchema.shape,
-  limit: z.number().int().min(1).max(50).optional().describe(
-    'Max queries to return, sorted by visibility score descending. ' +
-    'Default 20. Use 5–10 for a quick overview, 50 for exhaustive analysis.'
+  limit: z.number().int().min(1).optional().describe(
+    'Max queries to return. Omit to return all results. Use 5–10 for quick overview.'
+  ),
+  sortBy: z.enum(['visibility_score', 'share_of_answer_score', 'mentions', 'sentiment_score'])
+    .optional()
+    .describe(
+      'Field to sort results by. Default "visibility_score". ' +
+      'Use "visibility_score" asc to find worst-performing queries. ' +
+      'Use "mentions" desc to find most-discussed queries.'
+    ),
+  sortOrder: z.enum(['asc', 'desc'])
+    .optional()
+    .describe(
+      'Sort direction. Default "desc" (best first). ' +
+      'Use "asc" to surface worst-performing, zero-visibility, or failing queries.'
+    ),
+  offset: z.number().int().min(0).optional().describe(
+    'Pagination offset. Default 0. Use with limit to page through results. ' +
+    'Example: offset 0 = first page, offset 100 = second page.'
+  ),
+  keywordSearch: z.string().optional().describe(
+    'Filter queries whose query_text contains this keyword (case-insensitive). ' +
+    'Use to find queries about a specific product, feature, or topic without paging through everything.'
   ),
   includeCompetitors: z.boolean().optional().describe(
     'Set true to include a breakdown of competitor visibility scores for every query. ' +
@@ -121,7 +141,15 @@ export const queryPerformanceSchema = queriesSummarySchema;
 
 
 export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: string) {
-  const { brandId, startDate, endDate, limit = 20, queryType = 'all', fields, collectors } = inputs;
+  const { 
+    brandId, startDate, endDate, 
+    limit, queryType = 'all', 
+    fields, collectors,
+    sortBy = 'visibility_score',
+    sortOrder = 'desc',
+    offset = 0,
+    keywordSearch
+  } = inputs;
   const includeCompetitors = inputs.includeCompetitors ?? true;
   await validateBrandOwnership(brandId, ctx.customerId, dbToken);
 
@@ -133,7 +161,11 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     collectors,
     queryType,
     limit,
-    includeCompetitors
+    includeCompetitors,
+    sortBy,
+    sortOrder,
+    offset,
+    keywordSearch
   });
 
   const slimmed = summaries.map(s => ({
@@ -168,6 +200,11 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     _meta: {
       brand_id: brandId,
       query_type_filter: queryType,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+      offset,
+      limit_applied: limit,
+      keyword_filter: keywordSearch ?? null,
       query_type_note: 'blind = neutral = unprompted (no brand name in query). brand = explicit brand mention.',
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       include_competitors_effective: includeCompetitors,
@@ -180,6 +217,11 @@ export async function executeQueriesSummary(inputs: any, ctx: any, dbToken: stri
     _meta: {
       brand_id: brandId,
       query_type_filter: queryType,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+      offset,
+      limit_applied: limit,
+      keyword_filter: keywordSearch ?? null,
       query_type_note: 'blind = neutral = unprompted (no brand name in query). brand = explicit brand mention.',
       date_range: { startDate: startDate ?? 'last 30 days', endDate: endDate ?? 'today' },
       include_competitors_effective: includeCompetitors,

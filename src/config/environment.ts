@@ -4,6 +4,6 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL || 'https://app.evidentlyaeo.com',
   apiUrl: process.env.API_URL || 'https://api.evidentlyaeo.com',
   jwt: {
-    secret: process.env.SUPABASE_JWT_SECRET || '',
+    secret: process.env.JWT_SECRET || '',
   },
 };

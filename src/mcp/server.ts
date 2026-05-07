@@ -129,7 +129,7 @@ function registerTools(server: McpServer, sessionId: string) {
   // --------------------------------------------------------------------------------
   // Query Intelligence Tools (v2 — 3-tier architecture)
   //
-  // Tier 1  queries_summary             — default entry point, always call first
+  // Tier 1  queries_summary             — broad aggregated query metrics
   // Tier 2  queries_competitor_overlap  — competitive gap drill-down
   // Tier 3  queries_collector_breakdown — per-AI-engine single-query drill-down
   // --------------------------------------------------------------------------------
@@ -216,7 +216,7 @@ function registerTools(server: McpServer, sessionId: string) {
   // ─────────────────────────────────────────────────────────────────
   // Citation Intelligence Tools (v2 — 4-tool tiered architecture)
   //
-  // Tier 1  citations_top_sources       — default, call first for any citation question
+  // Tier 1  citations_top_sources       — aggregated citation source rankings
   // Tier 2  citations_source_detail     — single domain deep dive
   // Tier 2  citations_competitor_gap    — domains citing competitors not brand
   // Tier 3  citations_trend             — period-over-period trend

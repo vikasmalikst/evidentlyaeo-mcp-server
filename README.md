@@ -21,29 +21,49 @@ This repository contains the MCP layer and tool definitions. For security and pr
 
 ## Tool Architecture & Usage
 
-The EvidentlyAEO MCP server follows a tiered tool design. While AI models naturally discover the correct sequence based on parameter requirements, the intended analytical flow is as follows:
+The EvidentlyAEO MCP server provides a comprehensive suite of tools organized into functional tiers for deep AEO analysis:
 
-### 1. Brand & Dashboard (Entry Points)
-- **`brands_list`**: Always call this first if you do not have a `brandId`.
-- **`dashboard_get_summary`**: Provides the top-level KPIs for a brand.
-- **`dashboard_list_competitors`**: Shows the competitive landscape at the brand level.
+### Brand & Dashboard
+Entry-point tools for broad brand performance:
+- **`brands_list`**: Returns all brands associated with the authenticated account.
+- **`dashboard_get_summary`**: Retrieves top-level KPI summaries including visibility score, sentiment score, and top topics.
+- **`dashboard_list_competitors`**: Provides a brand-level competitive landscape comparison.
 
-### 2. Query Intelligence
-- **`queries_summary`**: The primary tool for query-level metrics (Visibility, SOA, Presence). Use this for any "top queries" or "blind vs brand" analysis.
-- **`queries_competitor_overlap`**: Used specifically for competitive gap analysis on tracked queries.
-- **`queries_trend`**: Returns pre-computed period-over-period performance changes.
-- **`queries_collector_breakdown`**: A specialized tool for engine-specific data (ChatGPT vs Perplexity) for a single query.
+### Query Intelligence
+Tools for analyzing performance on tracked search prompts:
+- **`queries_summary`**: Aggregated performance metrics (Visibility, SOA, Presence) at the query level, filterable by type (blind vs. brand).
+- **`queries_competitor_overlap`**: Detailed comparison of visibility gaps between the brand and competitors for specific queries.
+- **`queries_trend`**: Pre-computed period-over-period changes in query performance.
+- **`queries_collector_breakdown`**: Engine-specific performance (e.g., ChatGPT vs. Perplexity) for a single query.
 
-### 3. Citation Intelligence
-- **`citations_top_sources`**: The starting point for citation analysis.
-- **`citations_competitor_gap`**: Identifies specific domains that cite competitors but not the brand.
-- **`citations_source_detail`**: Provides deep analytics for a single specific referring domain.
-- **`citations_trend`**: Tracks citation growth and sentiment changes over time.
+### Citation Intelligence
+Tools for mapping the brand's presence across the web:
+- **`citations_top_sources`**: Ranking of citation sources by impact score and category.
+- **`citations_competitor_gap`**: Identification of domains citing competitors but not the primary brand.
+- **`citations_source_detail`**: Granular citation analytics for a specific domain.
+- **`citations_trend`**: Growth and sentiment trends for citation sources over time.
 
-### 4. Recommendations & Audit
-- **`recommendations_list`**: Returns prioritized optimization advice.
-- **`recommendations_get_detail`**: Provides a step-by-step action plan for a specific recommendation.
-- **`domain_readiness_get_audit`**: Analyzes technical SEO/AEO signals (Schema, Speed, Structure) for the brand's website.
+### Recommendations & Audit
+Tools for actionable optimization and technical readiness:
+- **`recommendations_list`**: Prioritized list of strategic AEO improvements.
+- **`recommendations_get_detail`**: Full action plan and supporting evidence for a specific recommendation.
+- **`domain_readiness_get_audit`**: Technical audit of SEO/AEO signals including schema markup and structured data coverage.
+
+## Privacy Policy
+
+EvidentlyAEO is committed to data privacy and security.
+
+### Data Collection & Usage
+This MCP server processes data necessary to provide AEO analytics, including brand identifiers, query performance metrics, and citation data. All data is retrieved from the EvidentlyAEO platform on behalf of the authenticated user.
+
+### Storage & Retention
+User data is stored securely and retained only as long as necessary to provide analytical services or as required by legal obligations. We do not store conversation history from the AI model.
+
+### Third-Party Sharing
+We do not sell user data to third parties. Data is shared with sub-processors only to the extent necessary to provide the service (e.g., database hosting).
+
+### Contact Information
+For privacy-related inquiries, please contact us at support@evidentlyaeo.com.
 
 
 ## Getting Started

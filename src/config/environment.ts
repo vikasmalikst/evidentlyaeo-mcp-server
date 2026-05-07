@@ -1,6 +1,5 @@
-// This is a stub for the public repo. 
-// All values are loaded from environment variables at runtime.
 export const config = {
+  nodeEnv: process.env.NODE_ENV || 'development',
   frontendUrl: process.env.FRONTEND_URL || 'https://app.evidentlyaeo.com',
   apiUrl: process.env.API_URL || 'https://api.evidentlyaeo.com',
   jwt: {

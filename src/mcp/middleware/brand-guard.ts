@@ -1,6 +1,10 @@
 import { supabaseAdmin } from '../../config/database';
 import { McpSystemError, McpUserError } from '../utils/response-formatter';
-import { BrandRow } from '../../services/brand-dashboard/types';
+export interface BrandRow {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 /**
  * Runs BEFORE every brand-scoped MCP tool. Never skip this.

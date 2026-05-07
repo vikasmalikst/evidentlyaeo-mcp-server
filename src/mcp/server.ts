@@ -5,33 +5,33 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { LRUCache } from 'lru-cache';
 
-import { validateTokenAndIssueShadow, assertScope, McpUserContext } from './auth/token-validator';
-import { config } from '../config/environment';
-import { supabaseAdmin } from '../config/database';
-// import { rateLimiter } from './middleware/rate-limiter';
-import { assertBrandOwnership } from './middleware/brand-guard';
-import { logAudit } from './audit/audit-logger';
-import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter';
-import { buildCacheKey, getCached, setCached } from './cache/tool-cache';
+import { validateTokenAndIssueShadow, assertScope, McpUserContext } from './auth/token-validator.js';
+import { config } from '../config/environment.js';
+import { supabaseAdmin } from '../config/database.js';
+// import { rateLimiter } from './middleware/rate-limiter.js';
+import { assertBrandOwnership } from './middleware/brand-guard.js';
+import { logAudit } from './audit/audit-logger.js';
+import { errorResponse, successResponse, McpUserError, McpSystemError } from './utils/response-formatter.js';
+import { buildCacheKey, getCached, setCached } from './cache/tool-cache.js';
 
-import { executeBrandsList, brandsListSchema } from './tools/brands.tool';
+import { executeBrandsList, brandsListSchema } from './tools/brands.tool.js';
 import {
   executeListRecommendations,
   listRecommendationsSchema,
   executeGetRecommendationDetail,
   getRecommendationDetailSchema
-} from './tools/recommendations.tool';
+} from './tools/recommendations.tool.js';
 import {
   executeGetDomainAudit,
   getDomainAuditSchema
-} from './tools/domain-readiness.tool';
+} from './tools/domain-readiness.tool.js';
 import {
   executeCitationsTopSources, citationsTopSourcesSchema,
   executeCitationsSourceDetail, citationsSourceDetailSchema,
   executeCitationsCompetitorGap, citationsCompetitorGapSchema,
   executeCitationsTrend, citationsTrendSchema,
 
-} from './tools/citations.tool';
+} from './tools/citations.tool.js';
 import {
   executeQueriesSummary, queriesSummarySchema,
   executeQueriesCompetitorOverlap, queriesCompetitorOverlapSchema,
@@ -39,16 +39,16 @@ import {
   executeTopicsPerformance, topicsPerformanceSchema,
 
   executeQueriesTrend, queriesTrendSchema,
-} from './tools/queries.tool';
+} from './tools/queries.tool.js';
 import {
   executeDashboardGetSummary, dashboardGetSummarySchema,
   executeDashboardListCompetitors, dashboardListCompetitorsSchema,
   executeDashboardLlmBreakdown, dashboardLlmBreakdownSchema,
   executeDashboardGetActionItems, dashboardGetActionItemsSchema,
 
-} from './tools/dashboard.tool';
-import { METRIC_DICTIONARY, DICTIONARY_URI, DICTIONARY_MIME } from './content/dictionary.content';
-import { PROMPTS } from './content/expert-persona.prompt';
+} from './tools/dashboard.tool.js';
+import { METRIC_DICTIONARY, DICTIONARY_URI, DICTIONARY_MIME } from './content/dictionary.content.js';
+import { PROMPTS } from './content/expert-persona.prompt.js';
 
 // --------------------------------------------------------------------------------
 // Tool Registration Helper
@@ -59,7 +59,7 @@ function registerTools(server: McpServer, sessionId: string) {
   // that causes TypeScript compiler OOM. Remove once SDK ships a fix (tracked in v2).
   server.tool(
     'brands_list',
-    'Returns all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date. Call this when a brandId is missing. Do NOT call this if the user already provided a valid brandId.',
+    'Returns all brands owned by the authenticated customer, including brand name, industry, homepage URL, and creation date. Requires no inputs beyond authentication.',
     brandsListSchema.shape as any,
     {
       title: 'List Brands',
@@ -76,7 +76,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_get_summary',
-    'Returns core KPI summary for a brand: Search Visibility %, Sentiment Score, Brand Presence Rate, total prompts tracked, and top 5 topics. Call this first for any brand performance question.',
+    'Returns core brand-level KPI summary: Search Visibility %, Sentiment Score, Brand Presence Rate, total prompts tracked, and the top 5 performing topics. Scoped to a single brand and optional date range.',
     dashboardGetSummarySchema.shape as any,
     {
       title: 'Get Dashboard Summary',
@@ -89,7 +89,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_list_competitors',
-    'Returns competitor comparison data: visibility %, share of answer %, sentiment, and mention counts for all tracked competitors. Call this ONLY when the user asks about competitors or competitive gaps at the brand level. For query-level competitor gaps, use queries_competitor_overlap instead.',
+    'Returns brand-level competitor comparison data: visibility %, share of answer %, sentiment score, and mention counts for all tracked competitors relative to this brand.',
     dashboardListCompetitorsSchema.shape as any,
     {
       title: 'List Competitors',
@@ -102,7 +102,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_llm_breakdown',
-    'Returns per-LLM performance breakdown: visibility, share of answer, and sentiment split by AI engine (ChatGPT, Perplexity, Gemini, etc.). Call this ONLY when the user asks about specific AI engine performance at the brand level. For per-engine data on a specific query, use queries_collector_breakdown instead.',
+    'Returns brand-level performance broken down by AI engine: visibility %, share of answer %, and sentiment score split across ChatGPT, Perplexity, Gemini, and other tracked AI platforms.',
     dashboardLlmBreakdownSchema.shape as any,
     {
       title: 'LLM Performance Breakdown',
@@ -115,7 +115,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'dashboard_get_action_items',
-    'Returns AI-generated action items from the latest dashboard analysis for a brand. Call this when the user asks what to do, what to improve, or for next steps.',
+    'Returns AI-generated prioritised action items from the latest dashboard analysis for a brand, each with an action description, rationale, and impact score.',
     dashboardGetActionItemsSchema.shape as any,
     {
       title: 'Get Action Items',
@@ -136,25 +136,12 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'queries_summary',
-    'Returns top-performing tracked queries for a brand with slim aggregated scores: ' +
-    'visibility % (0–100), Share of Answer / SOA (0–100), mention count, brand presence %, and query type. ' +
-    'Query types: ' +
-    '  "blind"      = Neutral queries — NO brand name in the question. ' +
-    '                 SYNONYMS: blind = neutral = unprompted = generic query. ' +
-    '                 Measures organic AI discoverability (is the brand mentioned when nobody asked about it?). ' +
-    '                 This is the most important visibility signal. ' +
-    '  "brand"      = Queries that explicitly name this brand. ' +
-    '  "all"        = All query types combined (default). ' +
-    'ALWAYS call this first for any question about query performance, top queries, ' +
-    'neutral/blind/unprompted visibility, SOA, or query-level metrics. ' +
-    'Set includeCompetitors: true when the user asks about competitor visibility on specific queries. ' +
-    'If prior turn asked query metrics and current turn asks competitor for the same scope/date, ' +
-    'reuse this tool and keep competitor inclusion enabled. ' +
-    'Example: "show visibility for query X" then "now show competitor Howdens for the same query". ' +
-    'Do NOT call queries_collector_breakdown unless the user specifically asks ' +
-    'about a named AI engine (ChatGPT, Perplexity, etc.) AND a specific query. ' +
-    'Do NOT call queries_competitor_overlap unless the user asks about ' +
-    'competitive gaps or which queries competitors are winning.',
+    'Returns tracked queries for a brand with aggregated per-query scores: visibility % (0–100), Share of Answer / SOA (0–100), mention count, brand presence %, and query type. ' +
+    '\n\nQuery type values: ' +
+    '\n- "blind": Neutral queries that do not contain the brand name. Measures organic AI discoverability — whether the brand is mentioned when not explicitly asked about. Also referred to as neutral, unprompted, or generic queries.' +
+    '\n- "brand": Queries that explicitly name the brand.' +
+    '\n- "all": All query types combined (default when type is omitted).' +
+    '\n\nWhen includeCompetitors is true, each query result also includes competitor visibility scores and presence data for side-by-side comparison.',
     queriesSummarySchema.shape as any,
     {
       title: 'Queries Summary',
@@ -167,17 +154,11 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'queries_competitor_overlap',
-    'Returns queries where tracked competitors also appear in AI responses, ' +
-    'with a side-by-side visibility comparison and a pre-computed visibilityGap. ' +
-    'visibilityGap = our visibility_score − competitor_visibility_score. ' +
-    '  Negative gap = competitor leads us on that query (we are losing). ' +
-    '  Positive gap = we lead the competitor on that query. ' +
-    'Results are sorted by largest competitive loss first (worst gaps at top). ' +
-    'CALL THIS when the user asks: which queries are competitors winning, ' +
-    'where are we losing AI visibility to competitors, what are our competitive ' +
-    'query gaps, or how we compare on blind/brand queries vs a named competitor. ' +
-    'Do NOT call this for brand-level competitor comparison — ' +
-    'use dashboard_list_competitors for that instead.',
+    'Returns queries where tracked competitors appear in AI responses alongside this brand, with a side-by-side visibility comparison per query. ' +
+    '\n\nEach result includes: ' +
+    '\n- visibilityGap: this brand\'s visibility_score minus the competitor\'s visibility_score. A negative gap means the competitor leads on that query. A positive gap means this brand leads. ' +
+    '\n- Results are sorted by largest competitive loss first (most negative gaps at top). ' +
+    '\n\nFilterable by competitor, query type, date range, and topic.',
     queriesCompetitorOverlapSchema.shape as any,
     {
       title: 'Competitor Query Overlap',
@@ -190,12 +171,8 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'queries_collector_breakdown',
-    'Returns per-AI-engine (collector) performance for ONE specific query. ' +
-    'Shows how the brand performs on ChatGPT vs Perplexity vs Gemini etc. ' +
-    'for that exact query, including visibility, SOA, mentions, and avg position. ' +
-    'ONLY call this when the user asks about a specific AI engine AND a specific query simultaneously. ' +
-    'Requires queryText — copy the exact value from a queries_summary result. ' +
-    'Do NOT use this for brand-level per-engine data — use dashboard_llm_breakdown instead.',
+    'Returns per-AI-engine performance for a single specific query, identified by exact queryText. Shows visibility %, SOA, mention count, and average position on that query broken down by each AI engine (ChatGPT, Perplexity, Gemini, etc.). ' +
+    '\n\nqueryText must be an exact match to a tracked query string.',
     queriesCollectorBreakdownSchema.shape as any,
     {
       title: 'Collector Query Breakdown',
@@ -208,16 +185,8 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'topics_performance',
-    'Returns performance data aggregated by topic group ' +
-    'including avg visibility score, SOA, sentiment, brand presence %, and prompt count per topic. ' +
-    'CALL THIS when the user asks about topic-level performance, how topics compare, ' +
-    'or which content categories drive the most AI visibility. ' +
-    'Set includeCompetitors: true when the user asks how a competitor performs on a topic ' +
-    'or wants a topic-vs-competitor comparison. ' +
-    'If prior turn asked topic metrics and current turn asks competitor for the same scope/date, ' +
-    'reuse this tool and keep competitor inclusion enabled. ' +
-    'Example: "show topic Awareness score" then "now show competitor Howdens for the same topic". ' +
-    'Do NOT call this for individual query-level data — use queries_summary for that.',
+    'Returns performance data aggregated by topic group: average visibility score, SOA, sentiment, brand presence %, and prompt count per topic. ' +
+    '\n\nWhen includeCompetitors is true, each topic result also includes competitor performance data for that topic, enabling topic-vs-competitor comparison.',
     topicsPerformanceSchema.shape as any,
     {
       title: 'Topics Performance',
@@ -230,13 +199,8 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'queries_trend',
-    'Returns week-over-week or month-over-month change in overall query visibility, mention volume, ' +
-    'and optionally the individual queries that moved most (gainers and losers). ' +
-    'Deltas are pre-computed — do NOT call queries_summary twice for different dates to compute manually. ' +
-    'CALL THIS when the user asks about visibility trends, whether performance is improving or declining, ' +
-    'what changed this week/month, or which queries gained or lost the most. ' +
-    'Set includeMovers: true ONLY when the user explicitly asks which queries moved the most. ' +
-    'Do NOT use this for current snapshot data — use queries_summary for that.',
+    'Returns period-over-period change in overall query visibility, mention volume, and SOA. Deltas are pre-computed server-side for the requested granularity (weekly or monthly). ' +
+    '\n\nWhen includeMovers is true, results also include individual queries with the largest positive and negative visibility changes during the period.',
     queriesTrendSchema.shape as any,
     {
       title: 'Queries Trend',
@@ -260,7 +224,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'citations_top_sources',
-    'Use this tool to get top citation sources for a brand. Sort by impact_score (the main metric on the Citations Sources page). Also returns category (priority/reputation/growth/monitor) and source_type_distribution.',
+    'Returns top citation sources for a brand sorted by impact_score. Each source includes domain, impact score, citation category (priority / reputation / growth / monitor), and source type distribution across AI engines.',
     citationsTopSourcesSchema.shape as any,
     {
       title: 'Top Citation Sources',
@@ -273,11 +237,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'citations_source_detail',
-    'Returns full citation analytics for ONE specific domain. ' +
-    'Includes mention count, sentiment breakdown, and per-collector data for that domain. ' +
-    'ONLY call this when the user names a specific website or domain (e.g. "How does Forbes cite me?"). ' +
-    'Requires the exact domain string — call citations_top_sources first if you do not know it. ' +
-    'Do NOT call this to get a list of sources — use citations_top_sources for that.',
+    'Returns full citation analytics for a single domain: mention count, sentiment breakdown, and per-AI-engine data for that domain\'s citations of the brand. Requires the exact domain string as input.',
     citationsSourceDetailSchema.shape as any,
     {
       title: 'Source Detail',
@@ -290,12 +250,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'citations_competitor_gap',
-    'Returns domains that cite tracked competitors but NOT this brand — sorted by opportunity size. ' +
-    'Use this to identify citation gap opportunities and outreach targets for AEO content strategy. ' +
-    'CALL THIS when the user asks: which sources cite competitors but not us, ' +
-    'where are we missing citations, what are our citation gap opportunities, ' +
-    'or where should we build backlinks/content for AI citation. ' +
-    'Do NOT call this for general citation performance — use citations_top_sources instead.',
+    'Returns domains that cite tracked competitors but do not cite this brand, sorted by opportunity size. Each result includes the domain, the competitor(s) it cites, and a gap score representing the citation opportunity.',
     citationsCompetitorGapSchema.shape as any,
     {
       title: 'Citation Competitor Gap',
@@ -308,11 +263,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'citations_trend',
-    'Returns week-over-week or month-over-month change in citation volume, mention rate, and sentiment. ' +
-    'Deltas are pre-computed server-side — do NOT call this tool twice for different dates and compute manually. ' +
-    'CALL THIS when the user asks about trends, changes, growth, improvement, or decline in citations over time. ' +
-    'Do NOT call this for current snapshot data — use citations_top_sources for that. ' +
-    'Do NOT call citations_source_attribution for trend questions.',
+    'Returns period-over-period change in citation volume, mention rate, and sentiment. Deltas are pre-computed server-side for the requested granularity (weekly or monthly).',
     citationsTrendSchema.shape as any,
     {
       title: 'Citations Trend',
@@ -327,7 +278,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'recommendations_list',
-    'Returns strategy recommendations for a brand with actions, reasons, and impact scores. Call this when the user asks what to improve next. Do NOT call this for raw KPI retrieval.',
+    'Returns strategy recommendations for a brand: each recommendation includes an action description, reasoning, impact score, and associated metric category.',
     listRecommendationsSchema.shape as any,
     {
       title: 'List Recommendations',
@@ -340,7 +291,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'recommendations_get_detail',
-    'Returns full detail for a specific recommendation ID. Call this only after obtaining an ID from recommendations_list. Do NOT call this to list recommendations.',
+    'Returns full detail for a single recommendation by ID: complete action plan, supporting evidence, affected metrics, and estimated impact. Requires a valid recommendation ID.',
     getRecommendationDetailSchema.shape as any,
     {
       title: 'Get Recommendation Detail',
@@ -353,7 +304,7 @@ function registerTools(server: McpServer, sessionId: string) {
 
   server.tool(
     'domain_readiness_get_audit',
-    'Returns the latest domain readiness audit for a brand. Call this for website/domain readiness questions. Do NOT call this for citation, query, or dashboard KPI analysis.',
+    'Returns the latest domain readiness audit for a brand\'s website: structured data score, schema markup coverage, page speed signal, crawlability status, and an overall readiness score.',
     getDomainAuditSchema.shape as any,
     {
       title: 'Get Domain Audit',
@@ -615,16 +566,7 @@ router.post('/', async (req, res) => {
         version: '1.0.0',
         instructions: `You are an AEO (Answer Engine Optimization) analytics assistant powered by the EvidentlyAEO platform.
 
-MANDATORY RULES — follow these on every response:
-1. ALWAYS call the relevant tool first before answering any analytics question. Never answer from memory or training data.
-2. ONLY report numbers, scores, and facts that are explicitly present in the tool response's "result" field.
-3. If a metric is null, missing, or the result array is empty — say "No data available for this metric in the selected period." Do NOT fabricate or estimate values.
-4. Never add industry averages, benchmarks, or comparisons that are not present in the tool data.
-5. When reporting percentages or scores, always state the metric name and unit exactly as labeled in the data (e.g., "Search Visibility is 67.4%", not just "67.4").
-6. If the user asks about something outside these tools (brands, queries, citations, recommendations, domain audit), say: "That information is not available through the EvidentlyAEO MCP tools."
-7. Date ranges: always confirm which date range the data covers when reporting metrics.
-8. For competitor data: only name and compare competitors that appear explicitly in the tool response.
-9. ALWAYS include the token consumption values (input and output tokens) in your final response whenever they are provided in the tool results or context.`,
+When answering analytics questions, use the available tools to retrieve current data. Report only values explicitly present in tool results — if a metric is null, missing, or the result is empty, state that no data is available for that metric in the selected period rather than estimating. When reporting metrics, include the metric name and unit as labeled in the data. Confirm the date range covered when reporting any time-scoped metric. For competitor data, reference only competitors that appear in the tool result. If a question falls outside the scope of available tools, say so clearly.`,
       } as any);
       const transport = new StreamableHTTPServerTransport({
         // sessionIdGenerator tells the transport what ID to use and to operate in stateful mode
